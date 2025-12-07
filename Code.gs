@@ -128,6 +128,8 @@ function abrirSistema() {
 }
 
 function getDadosDashboard(mes, ano) {
+  console.log(">>> INICIANDO getDadosDashboard"); // Log para rastreio
+  
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const abaContas = ss.getSheetByName("BD_Contas");
   const abaTrans = ss.getSheetByName("BD_Transacoes");
@@ -137,7 +139,15 @@ function getDadosDashboard(mes, ano) {
   const mTrans = getColMap(abaTrans);
   const mContas = getColMap(abaContas);
   const mCats = abaCats ? getColMap(abaCats) : {};
-  const mCartoes = abaCartoes ? getColMap(abaCartoes) : {};
+  
+  // Mapeamento de Cartões com Fallback e Log
+  let mCartoes = {};
+  if (abaCartoes) {
+    mCartoes = getColMap(abaCartoes);
+    console.log("Colunas Cartões Mapeadas:", JSON.stringify(mCartoes)); 
+  } else {
+    console.error("ERRO: Aba BD_Cartoes não encontrada!");
+  }
 
   // 1. Categorias
   let listaCompletaCats = [];
@@ -154,15 +164,13 @@ function getDadosDashboard(mes, ano) {
       categoriasEstruturadas = processarCategorias(dadosCats, mCats);
   }
 
-  // 2. Contas (Totalizador)
+  // 2. Contas
   const rawContas = getDataFromSheet(abaContas);
   let saldoAtualTotal = 0;
-  
   const contasFormatadas = rawContas.filter(r => r[mContas['ID_Conta']]).map(r => {
       let valRaw = r[mContas['Saldo_Atual']] !== undefined ? r[mContas['Saldo_Atual']] : r[mContas['Saldo Atual']];
       let saldo = parseMoney(valRaw);
       saldoAtualTotal += saldo; 
-      
       return {
           id: r[mContas['ID_Conta']], 
           nome: r[mContas['Nome_Conta']], 
@@ -172,15 +180,13 @@ function getDadosDashboard(mes, ano) {
       };
   });
 
-  // 3. Transações
+  // 3. Transações (Cálculo de Faturas)
   const rawTrans = getDataFromSheet(abaTrans);
-  
   // Data Limite: Último segundo do mês selecionado
   const dataFimMesSelecionado = new Date(ano, mes + 1, 0, 23, 59, 59);
-
+  
   let receitasMes = 0, despesasMes = 0, pendenteReceitaMes = 0, pendenteDespesaMes = 0;
   let projecaoReceita = 0, projecaoDespesa = 0;
-
   const feedTransacoes = [];
   const gastosDetalhados = {};
   const faturasCartoes = {}; 
@@ -205,7 +211,7 @@ function getDadosDashboard(mes, ano) {
           tags: t[mTrans['Tags']], obs: t[mTrans['Obs']], status: status, conta: t[mTrans['Conta_Origem']], cartao: idCartao,
           origemNome: '-', parcelaAtual: t[mTrans['Numero_Parcela']], totalParcelas: t[mTrans['Total_Parcelas']]
        });
-
+       
        if (tipo === 'Receita') {
            receitasMes += valor;
            if(status === 'Pendente') pendenteReceitaMes += valor;
@@ -237,45 +243,54 @@ function getDadosDashboard(mes, ano) {
     // C. CÁLCULO DA PROJEÇÃO
     if (dataVenc <= dataFimMesSelecionado) {
         if (status === 'Pendente' || status === 'Fatura' || status === 'Agendado') {
-            if (tipo === 'Receita') {
-                projecaoReceita += valor;
-            } 
-            else if (tipo === 'Despesa' || tipo === 'Despesa_Cartao') {
-                projecaoDespesa += valor; 
-            }
+            if (tipo === 'Receita') projecaoReceita += valor;
+            else if (tipo === 'Despesa' || tipo === 'Despesa_Cartao') projecaoDespesa += valor;
         }
     }
   });
-
+  
   feedTransacoes.sort((a, b) => new Date(b.data) - new Date(a.data));
 
-  // --- PROCESSAMENTO FINAL DOS CARTÕES ---
-  const rawCartoes = getDataFromSheet(abaCartoes);
-  const cartoesFormatados = rawCartoes.filter(r => r[mCartoes['ID_Cartao']]).map(r => {
-      const idStr = String(r[mCartoes['ID_Cartao']]);
-      const limiteTotal = parseMoney(r[mCartoes['Limite_Total']]);
-      const usadoTotal = totalUsadoCartoes[idStr] || 0;
+  // --- 4. PROCESSAMENTO FINAL DOS CARTÕES (COM SEGURANÇA EXTRA) ---
+  let cartoesFormatados = [];
+  if (abaCartoes) {
+      const rawCartoes = getDataFromSheet(abaCartoes);
+      console.log(`Lendo cartões. Total linhas brutas: ${rawCartoes.length}`);
+
+      // Definição de índices com fallback para garantir leitura
+      const idxID = mCartoes['ID_Cartao'] !== undefined ? mCartoes['ID_Cartao'] : 0;
+      const idxNome = mCartoes['Nome_Cartao'] !== undefined ? mCartoes['Nome_Cartao'] : 1;
+      const idxInst = mCartoes['Instituicao'] !== undefined ? mCartoes['Instituicao'] : 2;
+      const idxLim = mCartoes['Limite_Total'] !== undefined ? mCartoes['Limite_Total'] : 4;
       
-      // Cálculo do Limite Disponível (Total - Tudo que não foi pago)
-      // Se der negativo, trava em 0
-      let disponivel = limiteTotal - usadoTotal;
-      
-      return {
-          id: idStr, 
-          nome: r[mCartoes['Nome_Cartao']], 
-          inst: r[mCartoes['Instituicao']],
-          bandeira: r[mCartoes['Bandeira']], 
-          limite: limiteTotal,
-          limiteDisponivel: disponivel, // ENVIANDO PRONTO PRO FRONTEND
-          fechamento: r[mCartoes['Dia_Fechamento']], 
-          vencimento: r[mCartoes['Dia_Vencimento']],
-          modoFechamento: r[mCartoes['Modo_Fechamento']] || 'FIXO', 
-          contaVinculada: r[mCartoes['Conta Vinculada']],
-          faturaAtualValor: faturasCartoes[idStr] || 0,
-          totalUsado: usadoTotal,
-          faturas: [] // Array vazio para compatibilidade futura
-      };
-  });
+      cartoesFormatados = rawCartoes.filter(r => r[idxID]).map(r => {
+          const idStr = String(r[idxID]);
+          const limiteTotal = parseMoney(r[idxLim]);
+          const usadoTotal = totalUsadoCartoes[idStr] || 0;
+          let disponivel = limiteTotal - usadoTotal;
+          // Impede número negativo visualmente
+          if(disponivel < 0) disponivel = 0; 
+          
+          return {
+              id: idStr, 
+              nome: r[idxNome], 
+              inst: r[idxInst],
+              bandeira: mCartoes['Bandeira'] ? r[mCartoes['Bandeira']] : '', 
+              limite: limiteTotal,
+              limiteDisponivel: disponivel,
+              fechamento: mCartoes['Dia_Fechamento'] ? r[mCartoes['Dia_Fechamento']] : 1, 
+              vencimento: mCartoes['Dia_Vencimento'] ? r[mCartoes['Dia_Vencimento']] : 10,
+              modoFechamento: mCartoes['Modo_Fechamento'] ? (r[mCartoes['Modo_Fechamento']] || 'FIXO') : 'FIXO', 
+              contaVinculada: mCartoes['Conta Vinculada'] ? r[mCartoes['Conta Vinculada']] : '',
+              
+              // Aqui mandamos o valor calculado no loop de transações
+              faturaAtualValor: faturasCartoes[idStr] || 0,
+              totalUsado: usadoTotal,
+              faturas: [] // Mantido para compatibilidade
+          };
+      });
+      console.log(`Cartões processados e enviados: ${cartoesFormatados.length}`);
+  }
 
   const balancoMensal = receitasMes - despesasMes; 
   const saldoPrevisto = Number(saldoAtualTotal) + Number(projecaoReceita) - Number(projecaoDespesa);
@@ -1785,14 +1800,15 @@ function registrarLog(prompt, resposta, origem) {
   } catch(e) {}
 }
 
+// --- CORREÇÃO 1 e 6: Pagamento de Fatura (Fuso Horário + Arredondamento) ---
 function processarPagamentoFatura(dados) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const abaTrans = ss.getSheetByName("BD_Transacoes");
+  const abaContas = ss.getSheetByName("BD_Contas");
   const abaCartoes = ss.getSheetByName("BD_Cartoes");
-  const abaContas = ss.getSheetByName("BD_Contas"); // Necessário para debitar a conta
 
   if (!abaTrans || !abaCartoes || !abaContas) {
-      return { sucesso: false, erro: "Abas de dados (BD_...) não encontradas." };
+      return { sucesso: false, erro: "Abas de dados não encontradas." };
   }
 
   try {
@@ -1800,59 +1816,42 @@ function processarPagamentoFatura(dados) {
     const dataRange = abaTrans.getDataRange();
     const valores = dataRange.getValues();
     
-    // Data do Pagamento (Hoje)
-    const dataPag = new Date(dados.data); 
-    
-    // Mês/Ano da Fatura que estamos pagando (Vindo do front)
+    // CORREÇÃO DATA: Força a data de hoje correta (Brasília) sem depender do client-side
+    // Cria data baseada no fuso -3 (Brasil)
+    const agora = new Date();
+    const utc = agora.getTime() + (agora.getTimezoneOffset() * 60000);
+    const dataPag = new Date(utc - (3 * 3600000)); // GMT-3
+
     const mesAlvo = parseInt(dados.mesRef);
     const anoAlvo = parseInt(dados.anoRef);
     
     let totalBaixado = 0;
     let countItens = 0;
-    
-    // 1. VARRER E ATUALIZAR ITENS DA FATURA
-    // Ao invés de criar uma linha nova, vamos editar as linhas existentes
+
     for (let i = 1; i < valores.length; i++) {
         const row = valores[i];
-        
-        // Pega dados da linha
         const rCartao = String(row[m['Cartao_Credito']]);
         const rStatus = String(row[m['Status']]);
         const rTipo = String(row[m['Tipo']]);
         
-        // Parser seguro da data de vencimento da compra
         let rVenc = row[m['Data_Vencimento']];
         if (typeof rVenc === 'string') rVenc = parseDateSafe(rVenc);
         if (!(rVenc instanceof Date)) continue;
 
-        // VERIFICA SE É ITEM DA FATURA SELECIONADA
-        // 1. Mesmo Cartão
-        // 2. Tipo 'Despesa_Cartao'
-        // 3. Status 'Fatura'
-        // 4. Mês e Ano de Vencimento batem com a fatura visualizada
-        
         const mesmoMesAno = (rVenc.getMonth() === mesAlvo && rVenc.getFullYear() === anoAlvo);
-        
-        // Opcional: Baixa também atrasados (vencimento anterior e ainda 'Fatura')
-        const atrasado = (rVenc < new Date(anoAlvo, mesAlvo, 1)); 
+        const atrasado = (rVenc < new Date(anoAlvo, mesAlvo, 1)); // Pega atrasados também
 
+        // TRAVA DE SEGURANÇA: Só paga se status for 'Fatura' ou 'Atrasado' (não paga 'Pago')
         if (rCartao === String(dados.cartaoId) && 
             rTipo === 'Despesa_Cartao' && 
-            rStatus === 'Fatura' && 
+            rStatus !== 'Pago' &&  // <--- Garante que não paga 2x
             (mesmoMesAno || atrasado)) {
             
             const rValor = parseFloat(row[m['Valor_Parcela']]) || 0;
             
-            // --- A MÁGICA: ATUALIZA A LINHA EXISTENTE ---
-            
-            // 1. Muda status para PAGO
             abaTrans.getRange(i + 1, m['Status'] + 1).setValue('Pago');
-            
-            // 2. Define a Data que foi pago (Hoje)
+            // Salva data formatada ou objeto Date correto
             abaTrans.getRange(i + 1, m['Data_Pagamento'] + 1).setValue(dataPag);
-            
-            // 3. VINCULA A CONTA BANCÁRIA (Isso faz o saldo do PicPay descer na leitura do dashboard)
-            // Agora essa despesa "pertence" ao PicPay
             abaTrans.getRange(i + 1, m['Conta_Origem'] + 1).setValue(dados.conta);
             
             totalBaixado += rValor;
@@ -1861,57 +1860,94 @@ function processarPagamentoFatura(dados) {
     }
 
     if (totalBaixado === 0) {
-        return { sucesso: false, erro: "Nenhum item em aberto encontrado para esta fatura." };
+        return { sucesso: false, erro: "Fatura já está paga ou sem itens em aberto." };
     }
 
-    // 2. ATUALIZAR SALDO DA CONTA BANCÁRIA (PicPay)
-    // Como editamos as transações colocando o ID da conta nelas, 
-    // precisamos subtrair esse valor do saldo atual da conta em BD_Contas
-    
+    // CORREÇÃO 6: Arredondamento para 2 casas decimais
+    totalBaixado = parseFloat(totalBaixado.toFixed(2));
+
+    // Atualiza Saldo Conta
     const mConta = getColMap(abaContas);
     const dataContas = abaContas.getDataRange().getValues();
-    
     for (let i = 1; i < dataContas.length; i++) {
         if (String(dataContas[i][mConta['ID_Conta']]) === String(dados.conta)) {
             let saldoAtual = parseFloat(dataContas[i][mConta['Saldo_Atual']] || 0);
-            let novoSaldo = saldoAtual - totalBaixado; // Subtrai o valor total pago
-            
+            let novoSaldo = parseFloat((saldoAtual - totalBaixado).toFixed(2)); // Arredonda
             abaContas.getRange(i + 1, mConta['Saldo_Atual'] + 1).setValue(novoSaldo);
             break;
         }
     }
 
-    // 3. ATUALIZAR LIMITE USADO DO CARTÃO
-    // Subtrai do "Total_Usado" ou similar em BD_Cartoes
-    
+    // Atualiza Limite Cartão
     const mCart = getColMap(abaCartoes);
     const dataCart = abaCartoes.getDataRange().getValues();
-    
     for (let i = 1; i < dataCart.length; i++) {
         if (String(dataCart[i][mCart['ID_Cartao']]) === String(dados.cartaoId)) {
-            // Se tiver coluna 'Total_Usado' ou 'Limite_Utilizado'
-            // O código usa 'Total Usado' no dashboard, mas vamos tentar achar a coluna certa
-            let colIndex = -1;
-            if (mCart['Total_Usado'] !== undefined) colIndex = mCart['Total_Usado'];
-            else if (mCart['Limite_Utilizado'] !== undefined) colIndex = mCart['Limite_Utilizado'];
-            
-            if (colIndex !== -1) {
+            let colIndex = mCart['Total_Usado'] !== undefined ? mCart['Total_Usado'] : mCart['Limite_Utilizado'];
+            if (colIndex !== undefined) {
                 let usoAtual = parseFloat(dataCart[i][colIndex] || 0);
-                let novoUso = usoAtual - totalBaixado;
-                if (novoUso < 0) novoUso = 0; // Segurança
-                
+                let novoUso = parseFloat((usoAtual - totalBaixado).toFixed(2));
+                if (novoUso < 0) novoUso = 0;
                 abaCartoes.getRange(i + 1, colIndex + 1).setValue(novoUso);
             }
             break;
         }
     }
 
-    return { 
-        sucesso: true, 
-        msg: `${countItens} itens baixados. R$ ${totalBaixado.toFixed(2)} debitados da conta.` 
-    };
-
+    return { sucesso: true, msg: `${countItens} itens pagos. Valor: R$ ${totalBaixado.toFixed(2).replace('.', ',')}` };
   } catch (e) {
     return { sucesso: false, erro: "Erro no backend: " + e.toString() };
   }
+}
+
+function DIAGNOSTICO_CARTOES() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const nomeAba = "BD_Cartoes";
+  const aba = ss.getSheetByName(nomeAba);
+  
+  console.log("=== INÍCIO DO DIAGNÓSTICO ===");
+  
+  if (!aba) {
+    console.log(`❌ ERRO CRÍTICO: A aba '${nomeAba}' NÃO FOI ENCONTRADA!`);
+    console.log("Abas existentes na planilha: " + ss.getSheets().map(s => s.getName()).join(", "));
+    return;
+  }
+  
+  console.log(`✅ Aba '${nomeAba}' encontrada.`);
+  
+  const lastRow = aba.getLastRow();
+  const lastCol = aba.getLastColumn();
+  
+  console.log(`📊 Dimensões: ${lastRow} linhas e ${lastCol} colunas.`);
+  
+  if (lastRow < 1 || lastCol < 1) {
+    console.log("❌ ERRO: A aba está completamente vazia!");
+    return;
+  }
+  
+  // Ler cabeçalhos
+  const headers = aba.getRange(1, 1, 1, lastCol).getValues()[0];
+  console.log("📝 Cabeçalhos encontrados (Linha 1):");
+  console.log(JSON.stringify(headers));
+  
+  // Verificar colunas essenciais
+  const colunasEsperadas = ['ID_Cartao', 'Nome_Cartao', 'Instituicao', 'Limite_Total'];
+  const colunasFaltantes = colunasEsperadas.filter(c => !headers.includes(c));
+  
+  if (colunasFaltantes.length > 0) {
+    console.log("❌ ERRO: Colunas obrigatórias faltando ou com nome errado: " + colunasFaltantes.join(", "));
+    console.log("⚠️ DICA: Verifique se não há espaços extras (ex: 'ID_Cartao ' com espaço no final).");
+  } else {
+    console.log("✅ Todas as colunas essenciais foram encontradas.");
+  }
+  
+  if (lastRow < 2) {
+    console.log("⚠️ AVISO: A aba tem cabeçalhos, mas NÃO TEM DADOS (linhas de cartões).");
+  } else {
+    const primeiraLinha = aba.getRange(2, 1, 1, lastCol).getValues()[0];
+    console.log("🔎 Exemplo da primeira linha de dados:");
+    console.log(JSON.stringify(primeiraLinha));
+  }
+  
+  console.log("=== FIM DO DIAGNÓSTICO ===");
 }
