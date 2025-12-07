@@ -225,18 +225,16 @@ function getDadosDashboard(mes, ano) {
 
     // B. Cartões (Acumuladores Gerais)
     if (tipo === 'Despesa_Cartao' && idCartao) {
+        // Se não foi pago, abate do limite
         if(status !== 'Pago') totalUsadoCartoes[idCartao] = (totalUsadoCartoes[idCartao] || 0) + valor;
+        
+        // Se é deste mês, soma na fatura atual visual
         if(dataVenc.getMonth() === mes && dataVenc.getFullYear() === ano) {
             faturasCartoes[idCartao] = (faturasCartoes[idCartao] || 0) + valor;
         }
     }
 
-    // ======================================================================
-    // C. CÁLCULO DA PROJEÇÃO (CORRIGIDO)
-    // ======================================================================
-    // Regra: Somar TUDO que está Pendente até o final do mês selecionado.
-    // (Inclui contas atrasadas de meses anteriores que ainda não foram pagas)
-    
+    // C. CÁLCULO DA PROJEÇÃO
     if (dataVenc <= dataFimMesSelecionado) {
         if (status === 'Pendente' || status === 'Fatura' || status === 'Agendado') {
             if (tipo === 'Receita') {
@@ -251,25 +249,35 @@ function getDadosDashboard(mes, ano) {
 
   feedTransacoes.sort((a, b) => new Date(b.data) - new Date(a.data));
 
+  // --- PROCESSAMENTO FINAL DOS CARTÕES ---
   const rawCartoes = getDataFromSheet(abaCartoes);
-  const cartoesFormatados = rawCartoes.filter(r => r[mCartoes['ID_Cartao']]).map(r => ({
-      id: String(r[mCartoes['ID_Cartao']]), 
-      nome: r[mCartoes['Nome_Cartao']], 
-      inst: r[mCartoes['Instituicao']],
-      bandeira: r[mCartoes['Bandeira']], 
-      limite: parseMoney(r[mCartoes['Limite_Total']]),
-      fechamento: r[mCartoes['Dia_Fechamento']], 
-      vencimento: r[mCartoes['Dia_Vencimento']],
-      modoFechamento: r[mCartoes['Modo_Fechamento']] || 'FIXO', 
-      contaVinculada: r[mCartoes['Conta Vinculada']],
-      faturaAtual: faturasCartoes[String(r[mCartoes['ID_Cartao']])] || 0,
-      totalUsado: totalUsadoCartoes[String(r[mCartoes['ID_Cartao']])] || 0
-  }));
+  const cartoesFormatados = rawCartoes.filter(r => r[mCartoes['ID_Cartao']]).map(r => {
+      const idStr = String(r[mCartoes['ID_Cartao']]);
+      const limiteTotal = parseMoney(r[mCartoes['Limite_Total']]);
+      const usadoTotal = totalUsadoCartoes[idStr] || 0;
+      
+      // Cálculo do Limite Disponível (Total - Tudo que não foi pago)
+      // Se der negativo, trava em 0
+      let disponivel = limiteTotal - usadoTotal;
+      
+      return {
+          id: idStr, 
+          nome: r[mCartoes['Nome_Cartao']], 
+          inst: r[mCartoes['Instituicao']],
+          bandeira: r[mCartoes['Bandeira']], 
+          limite: limiteTotal,
+          limiteDisponivel: disponivel, // ENVIANDO PRONTO PRO FRONTEND
+          fechamento: r[mCartoes['Dia_Fechamento']], 
+          vencimento: r[mCartoes['Dia_Vencimento']],
+          modoFechamento: r[mCartoes['Modo_Fechamento']] || 'FIXO', 
+          contaVinculada: r[mCartoes['Conta Vinculada']],
+          faturaAtualValor: faturasCartoes[idStr] || 0,
+          totalUsado: usadoTotal,
+          faturas: [] // Array vazio para compatibilidade futura
+      };
+  });
 
   const balancoMensal = receitasMes - despesasMes; 
-  
-  // --- FÓRMULA FINAL ---
-  // Saldo Bancário Hoje + (Receitas Pendentes Passadas e Futuras) - (Despesas Pendentes Passadas e Futuras)
   const saldoPrevisto = Number(saldoAtualTotal) + Number(projecaoReceita) - Number(projecaoDespesa);
 
   return {
@@ -1778,81 +1786,132 @@ function registrarLog(prompt, resposta, origem) {
 }
 
 function processarPagamentoFatura(dados) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const abaTrans = ss.getSheetByName("BD_Transacoes");
+  const abaCartoes = ss.getSheetByName("BD_Cartoes");
+  const abaContas = ss.getSheetByName("BD_Contas"); // Necessário para debitar a conta
+
+  if (!abaTrans || !abaCartoes || !abaContas) {
+      return { sucesso: false, erro: "Abas de dados (BD_...) não encontradas." };
+  }
+
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const m = getColMap(abaTrans);
+    const dataRange = abaTrans.getDataRange();
+    const valores = dataRange.getValues();
     
-    // 1. ACESSAR ABAS COM SEGURANÇA (Evita o erro 'reading properties of null')
-    const sheetTransacoes = ss.getSheetByName("Transacoes") || ss.getSheetByName("Transações");
-    const sheetCartoes = ss.getSheetByName("Cartoes") || ss.getSheetByName("Cartões");
+    // Data do Pagamento (Hoje)
+    const dataPag = new Date(dados.data); 
     
-    if (!sheetTransacoes || !sheetCartoes) {
-      throw new Error("Abas 'Transacoes' ou 'Cartoes' não encontradas. Verifique os nomes.");
+    // Mês/Ano da Fatura que estamos pagando (Vindo do front)
+    const mesAlvo = parseInt(dados.mesRef);
+    const anoAlvo = parseInt(dados.anoRef);
+    
+    let totalBaixado = 0;
+    let countItens = 0;
+    
+    // 1. VARRER E ATUALIZAR ITENS DA FATURA
+    // Ao invés de criar uma linha nova, vamos editar as linhas existentes
+    for (let i = 1; i < valores.length; i++) {
+        const row = valores[i];
+        
+        // Pega dados da linha
+        const rCartao = String(row[m['Cartao_Credito']]);
+        const rStatus = String(row[m['Status']]);
+        const rTipo = String(row[m['Tipo']]);
+        
+        // Parser seguro da data de vencimento da compra
+        let rVenc = row[m['Data_Vencimento']];
+        if (typeof rVenc === 'string') rVenc = parseDateSafe(rVenc);
+        if (!(rVenc instanceof Date)) continue;
+
+        // VERIFICA SE É ITEM DA FATURA SELECIONADA
+        // 1. Mesmo Cartão
+        // 2. Tipo 'Despesa_Cartao'
+        // 3. Status 'Fatura'
+        // 4. Mês e Ano de Vencimento batem com a fatura visualizada
+        
+        const mesmoMesAno = (rVenc.getMonth() === mesAlvo && rVenc.getFullYear() === anoAlvo);
+        
+        // Opcional: Baixa também atrasados (vencimento anterior e ainda 'Fatura')
+        const atrasado = (rVenc < new Date(anoAlvo, mesAlvo, 1)); 
+
+        if (rCartao === String(dados.cartaoId) && 
+            rTipo === 'Despesa_Cartao' && 
+            rStatus === 'Fatura' && 
+            (mesmoMesAno || atrasado)) {
+            
+            const rValor = parseFloat(row[m['Valor_Parcela']]) || 0;
+            
+            // --- A MÁGICA: ATUALIZA A LINHA EXISTENTE ---
+            
+            // 1. Muda status para PAGO
+            abaTrans.getRange(i + 1, m['Status'] + 1).setValue('Pago');
+            
+            // 2. Define a Data que foi pago (Hoje)
+            abaTrans.getRange(i + 1, m['Data_Pagamento'] + 1).setValue(dataPag);
+            
+            // 3. VINCULA A CONTA BANCÁRIA (Isso faz o saldo do PicPay descer na leitura do dashboard)
+            // Agora essa despesa "pertence" ao PicPay
+            abaTrans.getRange(i + 1, m['Conta_Origem'] + 1).setValue(dados.conta);
+            
+            totalBaixado += rValor;
+            countItens++;
+        }
     }
 
-    // 2. REGISTRAR A SAÍDA DO DINHEIRO (Cria nova linha de DESPESA)
-    const idTransacao = Utilities.getUuid();
-    
-    // Ordem: ID, Data, Descrição, Valor, Categoria, Subcategoria, Conta, Status, Obs, Tipo
-    sheetTransacoes.appendRow([
-      idTransacao,
-      dados.data, // Data vinda do front (corrigida)
-      "Pagamento Fatura - " + dados.nomeCartao,
-      -Math.abs(dados.valor), // Valor negativo (saída)
-      "Pagamento de Fatura",
-      "Cartão de Crédito",
-      dados.conta,
-      "Pago", // Essa transação de saída nasce paga
-      dados.obs,
-      "Despesa"
-    ]);
-
-    // 3. ATUALIZAR STATUS DA FATURA PENDENTE (De 'Fatura' para 'Pago')
-    // Procura na planilha de transações se existe uma linha de provisão dessa fatura
-    const dadosTransacoes = sheetTransacoes.getDataRange().getValues();
-    
-    // Vamos procurar por linhas que tenham:
-    // A. Descrição contenha o nome do cartão
-    // B. Status seja 'Fatura' ou 'Pendente'
-    // C. Opcional: Mês correspondente (se quiser ser muito específico, mas pelo status geralmente basta)
-    
-    for (let i = 1; i < dadosTransacoes.length; i++) {
-      const descRow = String(dadosTransacoes[i][2]).toLowerCase(); // Coluna C: Descrição
-      const statusRow = String(dadosTransacoes[i][7]).toLowerCase(); // Coluna H: Status
-      const nomeCartaoBusca = dados.nomeCartao.toLowerCase();
-
-      // Se a descrição tem o nome do cartão E o status é 'fatura'
-      // Exemplo: Descrição "Fatura Nubank Dezembro" e Status "Fatura"
-      if (descRow.includes(nomeCartaoBusca) && (statusRow === 'fatura' || statusRow === 'pendente')) {
-        
-        // Encontramos a linha da pendência! Vamos marcar como PAGA.
-        sheetTransacoes.getRange(i + 1, 8).setValue("Pago"); // Atualiza Coluna H (Status)
-        
-        // Opcional: Se quiser zerar o valor da pendência para não duplicar no fluxo de caixa, 
-        // mas geralmente mantemos o valor e mudamos só o status para indicar que foi efetivado.
-      }
+    if (totalBaixado === 0) {
+        return { sucesso: false, erro: "Nenhum item em aberto encontrado para esta fatura." };
     }
 
-    // 4. ATUALIZAR SALDO/LIMITE DO CARTÃO
-    const dadosCartoes = sheetCartoes.getDataRange().getValues();
-    for (let i = 1; i < dadosCartoes.length; i++) {
-      if (String(dadosCartoes[i][0]) === String(dados.cartaoId)) {
-        // Ajuste conforme coluna real do "Fatura Atual" ou "Total Usado"
-        // Assumindo Coluna E (índice 4)
-        let colunaDebito = 5; 
-        
-        let valorAtual = parseFloat(dadosCartoes[i][colunaDebito-1]);
-        let novoValor = valorAtual - parseFloat(dados.valor);
-        
-        if (novoValor < 0) novoValor = 0;
-        
-        sheetCartoes.getRange(i + 1, colunaDebito).setValue(novoValor);
-        break;
-      }
+    // 2. ATUALIZAR SALDO DA CONTA BANCÁRIA (PicPay)
+    // Como editamos as transações colocando o ID da conta nelas, 
+    // precisamos subtrair esse valor do saldo atual da conta em BD_Contas
+    
+    const mConta = getColMap(abaContas);
+    const dataContas = abaContas.getDataRange().getValues();
+    
+    for (let i = 1; i < dataContas.length; i++) {
+        if (String(dataContas[i][mConta['ID_Conta']]) === String(dados.conta)) {
+            let saldoAtual = parseFloat(dataContas[i][mConta['Saldo_Atual']] || 0);
+            let novoSaldo = saldoAtual - totalBaixado; // Subtrai o valor total pago
+            
+            abaContas.getRange(i + 1, mConta['Saldo_Atual'] + 1).setValue(novoSaldo);
+            break;
+        }
     }
 
-    return { sucesso: true };
+    // 3. ATUALIZAR LIMITE USADO DO CARTÃO
+    // Subtrai do "Total_Usado" ou similar em BD_Cartoes
     
+    const mCart = getColMap(abaCartoes);
+    const dataCart = abaCartoes.getDataRange().getValues();
+    
+    for (let i = 1; i < dataCart.length; i++) {
+        if (String(dataCart[i][mCart['ID_Cartao']]) === String(dados.cartaoId)) {
+            // Se tiver coluna 'Total_Usado' ou 'Limite_Utilizado'
+            // O código usa 'Total Usado' no dashboard, mas vamos tentar achar a coluna certa
+            let colIndex = -1;
+            if (mCart['Total_Usado'] !== undefined) colIndex = mCart['Total_Usado'];
+            else if (mCart['Limite_Utilizado'] !== undefined) colIndex = mCart['Limite_Utilizado'];
+            
+            if (colIndex !== -1) {
+                let usoAtual = parseFloat(dataCart[i][colIndex] || 0);
+                let novoUso = usoAtual - totalBaixado;
+                if (novoUso < 0) novoUso = 0; // Segurança
+                
+                abaCartoes.getRange(i + 1, colIndex + 1).setValue(novoUso);
+            }
+            break;
+        }
+    }
+
+    return { 
+        sucesso: true, 
+        msg: `${countItens} itens baixados. R$ ${totalBaixado.toFixed(2)} debitados da conta.` 
+    };
+
   } catch (e) {
-    return { sucesso: false, erro: e.toString() };
+    return { sucesso: false, erro: "Erro no backend: " + e.toString() };
   }
 }
