@@ -1360,6 +1360,32 @@ html, body {
     margin-bottom: 20px !important;
 }
 
+/* --- CORREÇÃO DO MODAL DE PAGAMENTO --- */
+#modal-pagar-fatura .modal-box {
+    width: 90% !important;
+    max-width: 400px !important;
+    height: auto !important; /* Altura automática para caber o conteúdo */
+    max-height: 90vh !important; /* Limite seguro */
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 24px !important;
+    border-radius: 24px !important;
+    position: relative;
+}
+
+#modal-pagar-fatura .hero-value-wrapper {
+    margin: 20px 0 !important;
+    padding: 20px !important;
+    background: #F8FAFC !important;
+    border-radius: 16px !important;
+    border: 1px dashed #CBD5E1 !important;
+    text-align: center;
+}
+
+#modal-pagar-fatura .valor-display-clean {
+    justify-content: center !important;
+}
+
 /* --- CORREÇÃO 2: Regra de Fechamento (Dark Mode) --- */
 
 /* Container principal */
@@ -2784,7 +2810,6 @@ html, body {
     var DB_SUGESTOES = {};
 
 
-  // Resolve o problema de datas pulando para o dia seguinte às 21h
 function getDataLocalISO() {
     const data = new Date();
     const offset = data.getTimezoneOffset() * 60000;
@@ -3586,7 +3611,7 @@ function confirmarEfetivacao(id, desc, isFatura) {
         if(el) el.innerText = val; 
     }
 
-  // --- 2. CONTAS COM EDIÇÃO ---
+ // --- 2. CONTAS COM EDIÇÃO ---
 function renderContas(contas, containerId) {
     var container = document.getElementById(containerId);
     if(!container) return;
@@ -3595,7 +3620,6 @@ function renderContas(contas, containerId) {
     if(!contas || !contas.length) { container.innerHTML = '<p style="color:#aaa">Nenhuma conta.</p>'; return; }
 
     contas.forEach(c => {
-         // Lógica simplificada de logo
          var bInfo = ASSETS.banks.find(b => b.name === c.inst) || ASSETS.banks.find(b => b.name === 'Outro');
          
          container.innerHTML += `
@@ -3618,252 +3642,262 @@ function renderContas(contas, containerId) {
     });
 }
 
-// Função robusta para definir se a fatura está ABERTA ou FECHADA
-// Considera Mês, Ano e Dia de fechamento
-function getStatusFatura(cartao) {
-    // 1. Definição das datas
-    const hoje = new Date();
-    // Correção do fuso horário (Bug das 21h)
-    const offset = hoje.getTimezoneOffset() * 60000;
-    const hojeLocal = new Date(hoje.getTime() - offset);
-    
-    // Dia atual e dados do cartão
-    const diaAtual = hojeLocal.getDate();
-    const diaVencimento = parseInt(cartao.vencimento) || 10;
-    
-    // Define dia de fechamento (Dinâmico = 7 dias antes, Fixo = o que está no cadastro)
-    let diaFechamento;
-    if (cartao.modoFechamento === 'DINAMICO') {
-        diaFechamento = diaVencimento - 7;
+// =========================================================
+// 2. FUNÇÃO AUXILIAR: CALCULAR DATAS E STATUS
+// =========================================================
+function calcularDatasCiclo(cartao, ano, mesIndex) {
+    // Lê os dados exatamente como seu backend manda (id, fechamento, vencimento)
+    const diaVenc = parseInt(cartao.vencimento) || 10;
+    const diaFech = parseInt(cartao.fechamento) || 1;
+    const modo = cartao.modoFechamento || 'FIXO';
+
+    const dataVencimento = new Date(ano, mesIndex, diaVenc);
+    let dataFechamento;
+
+    if (modo === 'DINAMICO') {
+        // Nubank: Fecha X dias antes do vencimento
+        dataFechamento = new Date(dataVencimento);
+        dataFechamento.setDate(dataVencimento.getDate() - diaFech);
     } else {
-        diaFechamento = parseInt(cartao.fechamento) || 1;
+        // Inter/Outros: Dia fixo
+        dataFechamento = new Date(ano, mesIndex, diaFech);
+        // Se a data de fechamento for maior que o vencimento (ex: fecha dia 25, vence dia 05 do prox mes)
+        // Significa que o fechamento pertence ao mês anterior
+        if (diaFech > diaVenc) {
+            dataFechamento.setMonth(dataFechamento.getMonth() - 1);
+        }
     }
-    // Proteção para dia não ser negativo ou zero
-    if (diaFechamento <= 0) diaFechamento = 1;
-
-    // --- A LÓGICA SIMPLIFICADA PARA O DASHBOARD (HOJE) ---
-    // No Dashboard principal, sempre olhamos para a data de HOJE.
-    // Se hoje >= dia do fechamento E hoje < dia do vencimento: FECHADA
-    // Caso contrário: ABERTA (ou fatura atual)
     
-    // Exemplo: Vence dia 10, Fecha dia 3.
-    // Hoje é dia 2: Aberta.
-    // Hoje é dia 4: Fechada.
-    // Hoje é dia 11: Aberta (já é a do próximo mês).
+    // Zera horas para comparação
+    dataVencimento.setHours(23, 59, 59, 999);
+    dataFechamento.setHours(0, 0, 0, 0);
 
-    let status = {
-        label: 'Fatura Atual',
-        color: 'var(--primary)', // Azul/Verde
-        isFechada: false
-    };
-
-    if (diaAtual >= diaFechamento && diaAtual < diaVencimento) {
-        status.label = 'Fatura Fechada';
-        status.color = 'var(--danger)'; // Vermelho
-        status.isFechada = true;
-    }
-
-    return status;
+    return { dataFechamento, dataVencimento };
 }
 
-function renderCartoes(cartoes, containerId) {
-    var container = document.getElementById(containerId);
-    if (!container) return; // Segurança caso o elemento não exista
-    
-    container.innerHTML = '';
-    
-    if (!cartoes || !cartoes.length) { 
-        container.innerHTML = '<div style="color:#94A3B8; padding: 20px; text-align:center;">Nenhum cartão cadastrado.</div>'; 
-        return; 
+function obterStatusFatura(cartao, valorFatura) {
+    // Se não tem fatura ou valor é zero
+    if (!valorFatura || valorFatura <= 0) {
+         return { texto: 'ABERTA', color: '#64748B', bg: '#F1F5F9', podePagar: false };
     }
 
-    cartoes.forEach(c => {
-        // --- 1. TRATAMENTO DE ÍCONES (BLINDAGEM) ---
-        // Se não achar o banco, usa 'Outro'. Se 'Outro' não existir, cria um objeto dummy para não travar o código.
-        var bancoDefault = { logo: '<i class="fas fa-university"></i>', name: 'Banco' };
-        var bInfo = (typeof ASSETS !== 'undefined' && ASSETS.banks) 
-            ? (ASSETS.banks.find(b => b.name === c.inst) || ASSETS.banks.find(b => b.name === 'Outro') || bancoDefault)
-            : bancoDefault;
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
 
-        // Se não achar a bandeira, usa Mastercard como fallback
-        var bandeiraDefault = { type: 'icon', val: 'fab fa-cc-mastercard' };
-        var brandConfig = (typeof BRAND_ICONS !== 'undefined' && BRAND_ICONS[c.bandeira]) 
-            ? BRAND_ICONS[c.bandeira] 
-            : (typeof BRAND_ICONS !== 'undefined' ? BRAND_ICONS['Mastercard'] : bandeiraDefault);
+    // Pega o mês/ano que está sendo visualizado na tela
+    const mesTela = DATA_ATUAL.getMonth();
+    const anoTela = DATA_ATUAL.getFullYear();
 
-        var brandHtml = brandConfig.type === 'icon' 
-            ? `<i class="${brandConfig.val}" style="font-size:24px; color:var(--text-secondary)"></i>` 
-            : `<img src="${brandConfig.val}" style="height:20px; object-fit:contain;">`;
+    const { dataFechamento, dataVencimento } = calcularDatasCiclo(cartao, anoTela, mesTela);
 
+    // Comparações
+    if (hoje > dataVencimento) {
+        return { texto: 'ATRASADA', color: '#DC2626', bg: '#FEE2E2', podePagar: true };
+    }
+    if (hoje >= dataFechamento) {
+        return { texto: 'FECHADA', color: '#2563EB', bg: '#EFF6FF', podePagar: true };
+    }
+    
+    return { texto: 'ABERTA', color: '#475569', bg: '#F1F5F9', podePagar: false };
+}
 
-        // --- 2. CÁLCULOS FINANCEIROS ---
-        // Converte para número para evitar erro de soma de texto
-        var limite = parseFloat(c.limite) || 0;
-        var totalUsado = parseFloat(c.totalUsado) || 0;
-        var faturaAtual = parseFloat(c.faturaAtual) || 0;
+// =========================================================
+// 3. FUNÇÃO AUXILIAR: STATUS DA FATURA
+// =========================================================
+function obterStatusFatura(cartao, valorFatura) {
+    if (valorFatura <= 0) {
+         return { texto: 'ABERTA', color: '#64748B', bg: '#F1F5F9', podePagar: false };
+    }
 
-        var disponivel = limite - totalUsado;
-        var pct = (limite > 0) ? (totalUsado / limite) * 100 : 0;
-        if (pct > 100) pct = 100;
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    // Usa o mês que está na tela (DATA_ATUAL)
+    const mesTela = DATA_ATUAL.getMonth();
+    const anoTela = DATA_ATUAL.getFullYear();
+
+    const { dataFechamento, dataVencimento } = calcularDatasCiclo(cartao, anoTela, mesTela);
+
+    // Lógica
+    if (hoje > dataVencimento) {
+        return { texto: 'ATRASADA', color: '#DC2626', bg: '#FEE2E2', podePagar: true };
+    }
+    if (hoje >= dataFechamento) {
+        return { texto: 'FECHADA', color: '#2563EB', bg: '#EFF6FF', podePagar: true };
+    }
+    
+    return { texto: 'ABERTA', color: '#475569', bg: '#F1F5F9', podePagar: false };
+}
+
+// =========================================================
+// 3. FUNÇÃO DE RENDERIZAÇÃO (ADAPTADA AO SEU BACKEND ATUAL)
+// =========================================================
+function renderCartoes(listaOpcional) {
+    const container = document.getElementById('cards-container');
+    if(!container) return;
+    container.innerHTML = ''; 
+
+    // Usa a lista passada ou a global
+    const lista = listaOpcional || CARTOES_DB;
+
+    // DEBUG: Se a lista estiver vazia ou nula
+    if(!lista || lista.length === 0) {
+         console.warn("Lista de cartões vazia ou não carregada.");
+         container.innerHTML = '<div style="padding:20px; color:#94A3B8; text-align:center;">Nenhum cartão encontrado.</div>';
+         return;
+    }
+
+    lista.forEach(cartao => {
+        // --- AQUI ESTAVA O ERRO ---
+        // Seu backend manda 'faturaAtual' (número direto), não um array de faturas.
+        const valorFatura = parseFloat(cartao.faturaAtual || 0);
+        const totalUsado = parseFloat(cartao.totalUsado || 0);
+        const limiteTotal = parseFloat(cartao.limite || 0);
         
-        // Cor da barra de progresso
-        var colorBar = pct > 80 ? 'var(--danger)' : 'var(--success)';
-
-
-        // --- 3. NOVA LÓGICA DE STATUS (CHAMA A FUNÇÃO ACIMA) ---
-        var infoStatus = getStatusFatura(c);
+        // Calcula o limite disponível aqui no Front, já que o backend manda o total usado
+        const limiteDisp = limiteTotal - totalUsado;
         
+        // Status visual
+        const status = obterStatusFatura(cartao, valorFatura);
+        
+        // Barra de progresso
+        let porcentagem = 0;
+        if(limiteTotal > 0) {
+            porcentagem = ((limiteTotal - limiteDisp) / limiteTotal) * 100;
+            porcentagem = Math.min(100, Math.max(0, porcentagem));
+        }
 
-        // --- 4. RENDERIZAÇÃO DO HTML ---
-        // (Ajustei apenas para inserir as variáveis calculadas acima)
-        container.innerHTML += `
-        <div class="credit-stats-card" onclick="abrirHistoricoCartao('${c.id}', '${c.nome}', ${limite}, ${totalUsado})">
-            
-            <div class="card-actions" onclick="event.stopPropagation(); editarCartao('${c.id}')">
-                <button class="btn-edit-card"><i class="fas fa-pencil-alt"></i></button>
-            </div>
-            
-            <div class="card-icons">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <div class="logo-wrapper">${bInfo.logo}</div>
-                    <div style="font-weight:700; font-size:16px;">${c.nome}</div>
-                </div>
-                ${brandHtml}
-            </div>
-            
-            <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:8px;">
-                <div>
-                   <div style="font-size:11px; font-weight:700; color:var(--text-secondary); text-transform:uppercase;">Disponível</div>
-                   <div style="font-size:18px; font-weight:800; color:${colorBar}">${fmt(disponivel)}</div>
-                </div>
-                <div style="text-align:right;">
-                   <div style="font-size:11px; font-weight:700; color:var(--text-secondary); text-transform:uppercase;">${infoStatus.label}</div>
-                   <div style="font-size:18px; font-weight:800; color:${infoStatus.color}">${fmt(faturaAtual)}</div>
-                </div>
-            </div>
-            
-            <div>
-               <div class="limit-bar-wrapper">
-                    <div class="limit-bar" style="width:${pct}%; background:${colorBar}"></div>
-               </div>
-               <div class="limit-labels"><span>Uso: ${fmt(totalUsado)}</span></div>
-            </div>
+        // Tratamento da imagem
+        const instNome = (cartao.inst || 'outro').toLowerCase().trim().replace(/\s/g, '');
+        // Garante que Inter Gold vire 'inter' se a imagem for inter.png
+        const imgName = instNome.includes('inter') ? 'inter' : instNome;
+        const imgPath = `assets/${imgName}.png`;
 
-        </div>`;
+        const html = `
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative group" id="card-${cartao.id}">
+                 <div class="flex justify-between items-start mb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center bg-gray-50">
+                            <img src="${imgPath}" onerror="this.src='https://via.placeholder.com/30?text=Card'" class="w-6 h-6 object-contain">
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-gray-800">${cartao.nome}</h3>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="text-xs font-bold px-2 py-0.5 rounded" 
+                                      style="background:${status.bg}; color:${status.color}">
+                                    ${status.texto}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="abrirModalEdicao('${cartao.id}')" class="text-gray-400 hover:text-blue-600">
+                        <i class="fas fa-pencil-alt"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-1 mb-4">
+                    <p class="text-xs text-gray-500 font-medium uppercase">Disponível</p>
+                    <p class="text-xl font-bold text-green-600 limite-disponivel">
+                        ${fmt(limiteDisp)}
+                    </p>
+                    <div class="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>Fatura: ${fmt(valorFatura)}</span>
+                    </div>
+                </div>
+
+                <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                    <div class="h-full bg-green-500 rounded-full transition-all duration-500 progress-bar-fill" 
+                         style="width: ${porcentagem}%"></div>
+                </div>
+
+                <div class="mt-4 flex gap-2">
+                    <button onclick="abrirHistoricoCartao('${cartao.id}', '${cartao.nome}')" 
+                            class="flex-1 py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors">
+                        Detalhes
+                    </button>
+                    ${status.podePagar ? `
+                    <button onclick="abrirModalPagamentoFaturaComDados('${cartao.id}', ${valorFatura})" 
+                            class="flex-1 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
+                        Pagar
+                    </button>` : ''}
+                </div>
+            </div>
+        `;
+        container.innerHTML += html;
     });
 }
 
-// VARIÁVEIS NOVAS PARA CONTROLE DE FATURA
-    var CARTAO_ATUAL_ID = null;
-    var DATA_FATURA = new Date(); // Data independente para navegação dentro do modal
+// 4. Modal de Histórico e Detalhes
+var CARTAO_ATUAL_ID = null;
+var DATA_FATURA = new Date();
 
-    // --- 1. ABRIR HISTÓRICO COM NAVEGAÇÃO ---
-    function abrirHistoricoCartao(id, nome) {
-        CARTAO_ATUAL_ID = id;
-        DATA_FATURA = new Date(DATA_ATUAL); // Começa no mês atual do dashboard
-        
-        document.getElementById('hist-card-name').innerText = nome;
-        abrirModal('historico-cartao');
-        carregarDadosFatura();
-        
-        // Carrega gráfico histórico (uma vez)
-        google.script.run.withSuccessHandler(renderGraficoBarrasPremium).getGraficoFaturasCartao(id);
-    }
+function abrirHistoricoCartao(id, nome) {
+    CARTAO_ATUAL_ID = id;
+    DATA_FATURA = new Date(DATA_ATUAL); // Começa sincronizado com o dashboard
+    
+    document.getElementById('hist-card-name').innerText = nome;
+    abrirModal('historico-cartao');
+    
+    // Carrega dados iniciais
+    carregarDadosFatura();
+    
+    // Carrega gráfico
+    google.script.run.withSuccessHandler(renderGraficoBarrasPremium).getGraficoFaturasCartao(id);
+}
 
-    function mudarMesFatura(dir) {
-        DATA_FATURA.setMonth(DATA_FATURA.getMonth() + dir);
-        carregarDadosFatura();
-    }
+function mudarMesFatura(dir) {
+    DATA_FATURA.setMonth(DATA_FATURA.getMonth() + dir);
+    carregarDadosFatura();
+}
 
-// --- 1. CARREGAR DADOS DA FATURA (CORRIGIDO PARA STATUS REAL) ---
 function carregarDadosFatura() {
-    // Formatação do Título
+    // Atualiza Título Mes/Ano
     const mesStr = DATA_FATURA.toLocaleDateString('pt-BR', { month: 'short' }).replace('.','').toUpperCase();
     const anoStr = DATA_FATURA.getFullYear();
     document.getElementById('hist-card-mes').innerText = `${mesStr}/${anoStr}`;
     
-    // Loading
-    document.getElementById('hist-list-container').innerHTML = '<div style="text-align:center; padding:50px; color:#94A3B8"><i class="fas fa-circle-notch fa-spin fa-2x"></i><p style="margin-top:10px; font-size:12px;">Buscando lançamentos...</p></div>';
+    // Loading State
+    document.getElementById('hist-list-container').innerHTML = '<div style="text-align:center; padding:40px;"><i class="fas fa-spinner fa-spin"></i></div>';
     document.getElementById('hist-total-fatura').innerText = '...';
 
-    var mes = DATA_FATURA.getMonth();
-    var ano = DATA_FATURA.getFullYear();
-
-    // --- CÁLCULO INTELIGENTE DO STATUS (ABERTA/FECHADA) ---
-    // 1. Busca as configurações deste cartão na memória global
-    const card = CARTOES_DB.find(c => c.id === CARTAO_ATUAL_ID);
+    // Busca o cartão na memória global para calcular status
+    const cartao = CARTOES_DB.find(c => (c.ID_Cartao || c.id) === CARTAO_ATUAL_ID);
     
-    let status = 'ABERTA';
-    let color = '#EFF6FF';
-    let txtColor = 'var(--primary)';
+    if(cartao) {
+        const faturaDummy = {
+            mesIndex: DATA_FATURA.getMonth(),
+            ano: DATA_FATURA.getFullYear(),
+            paga: false // O backend dirá se está paga, mas assumimos false para calculo de data
+        };
+        
+        // Se encontrarmos a fatura real no objeto, usamos o status de pagamento dela
+        const faturaReal = cartao.faturas.find(f => f.mesIndex === faturaDummy.mesIndex && f.ano === faturaDummy.ano);
+        if(faturaReal) faturaDummy.paga = faturaReal.paga;
 
-    if (card) {
-        const hoje = new Date();
-        hoje.setHours(0,0,0,0); // Zera hora para comparar apenas datas
-
-        // Data 1 do mês que estamos olhando
-        const viewDate = new Date(ano, mes, 1);
-        // Data 1 do mês atual real
-        const currentMonthFirst = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-
-        // A. Se estamos olhando um mês passado, com certeza está FECHADA
-        if (viewDate < currentMonthFirst) {
-             status = 'FECHADA'; color = '#FEF2F2'; txtColor = 'var(--danger)';
-        }
-        // B. Se estamos olhando meses muito à frente, é FUTURA
-        else if (viewDate > new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1)) {
-             status = 'FUTURA'; color = '#F8FAFC'; txtColor = 'var(--text-secondary)';
-        }
-        // C. Se é o mês atual ou o próximo (Zona de transição), calcula o dia exato
-        else {
-             const diaV = parseInt(card.vencimento) || 10;
-             const diaF = parseInt(card.fechamento) || 1;
-             const modo = card.modoFechamento || 'FIXO';
-
-             let dataFechamento;
-
-             if (modo === 'DINAMICO') {
-                 // Nubank: Vencimento dia 6. Fecha 7 dias antes.
-                 // Data Vencimento deste mês visualizado:
-                 let dataVenc = new Date(ano, mes, diaV);
-                 // Data Fechamento Real:
-                 dataFechamento = new Date(dataVenc);
-                 dataFechamento.setDate(dataFechamento.getDate() - diaF);
-             } else {
-                 // Fixo: Fecha no dia X
-                 dataFechamento = new Date(ano, mes, diaF);
-             }
-
-             // Comparação Final:
-             // Se Hoje >= Data de Fechamento, a fatura desse mês já fechou.
-             if (hoje >= dataFechamento) {
-                 status = 'FECHADA'; color = '#FEF2F2'; txtColor = 'var(--danger)';
-             } else {
-                 // Se ainda não chegou na data de fechamento
-                 // Verifica se é o mês atual (Aberta) ou mês que vem (Futura)
-                 if (viewDate.getTime() === currentMonthFirst.getTime()) {
-                     status = 'ABERTA'; color = '#EFF6FF'; txtColor = 'var(--primary)';
-                 } else {
-                     status = 'FUTURA'; color = '#F8FAFC'; txtColor = 'var(--text-secondary)';
-                 }
-             }
+        const status = obterStatusFatura(cartao, faturaDummy);
+        
+        // Atualiza Badge do Modal
+        const badge = document.getElementById('hist-status-badge');
+        badge.innerText = status.texto;
+        badge.style.backgroundColor = status.hexBg;
+        badge.style.color = status.hex;
+        
+        // Controla botão de pagar dentro do modal
+        const btnPagar = document.getElementById('btn-pagar-fatura');
+        if(btnPagar) {
+             btnPagar.style.display = status.podePagar ? 'block' : 'none';
         }
     }
 
-    // Atualiza a Badge
-    const badge = document.getElementById('hist-status-badge');
-    badge.innerText = status;
-    badge.style.background = color;
-    badge.style.color = txtColor;
-
-    // --- BUSCA DADOS NO BACKEND ---
-    google.script.run.withSuccessHandler(function(itens) {
-        renderListaFaturaPremium(itens);
-        
-        let total = itens.reduce((acc, i) => acc + (Number(i.valor)||0), 0);
-        document.getElementById('hist-total-fatura').innerText = fmt(total);
-
-    }).getFaturaDetalhada(CARTAO_ATUAL_ID, mes, ano);
+    // Busca itens do backend
+    google.script.run
+        .withSuccessHandler(function(itens) {
+            renderListaFaturaPremium(itens);
+            // Calcula total na hora
+            let total = itens.reduce((acc, i) => acc + (Number(i.valor)||0), 0);
+            document.getElementById('hist-total-fatura').innerText = fmt(total);
+        })
+        .getFaturaDetalhada(CARTAO_ATUAL_ID, DATA_FATURA.getMonth(), DATA_FATURA.getFullYear());
 }
 
 function renderListaFaturaPremium(itens) {
@@ -3871,104 +3905,103 @@ function renderListaFaturaPremium(itens) {
     div.innerHTML = '';
     
     if(!itens || itens.length === 0) {
-        div.innerHTML = '<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:200px; color:#94A3B8"><i class="fas fa-receipt" style="font-size:32px; margin-bottom:12px; opacity:0.5"></i><p>Nenhuma compra nesta fatura.</p></div>';
+        div.innerHTML = '<div style="text-align:center; padding:30px; color:#94A3B8">Nenhuma compra nesta fatura.</div>';
         return;
     }
 
     itens.sort((a, b) => new Date(b.data) - new Date(a.data));
-    let lastDateKey = '';
-
+    
     itens.forEach(t => {
         let dt = new Date(t.data);
         let dia = String(dt.getDate()).padStart(2, '0');
         let mes = dt.toLocaleDateString('pt-BR', {month:'short'}).replace('.','').toUpperCase();
-        let sem = dt.toLocaleDateString('pt-BR', {weekday:'short'}).replace('.','');
-        let dateKey = `${dia} ${mes}`;
         
-        if (dateKey !== lastDateKey) {
-            div.innerHTML += `<div class="date-group-header" style="background:#F8FAFC; padding:8px 24px; font-size:11px; font-weight:800; color:#64748B; border-top:1px solid #E2E8F0; border-bottom:1px solid #E2E8F0;">${dia} ${mes} • ${sem.charAt(0).toUpperCase() + sem.slice(1)}</div>`;
-            lastDateKey = dateKey;
-        }
+        let iconClass = t.icone || 'fas fa-shopping-bag';
+        let cor = t.color || '#64748B';
 
-        // AJUSTE 2: Usa o ícone vindo do backend (t.icone)
-        let corCat = t.color && t.color !== '#64748B' ? t.color : '#64748B';
-        let bgStyle = `background: ${corCat}1A; color: ${corCat};`; 
-        
-        // Se vier vazio do backend por algum motivo, usa fallback
-        let iconClass = t.icone || 'fas fa-tag';
-
-        let subHtml = t.cat;
-        if(t.parcela && t.parcela !== 'À vista') {
-            subHtml += ` • <span style="color:var(--primary); font-weight:700;">${t.parcela}</span>`;
-        }
-
-        // AJUSTE 3: Evento onclick chamando abrirModalEdicao
         div.innerHTML += `
         <div class="invoice-item" onclick="fecharModal('historico-cartao'); abrirModalEdicao('${t.id}')">
-            <div class="inv-icon-box" style="${bgStyle}">
+            <div class="inv-icon-box" style="background:${cor}20; color:${cor}">
                 <i class="${iconClass}"></i>
             </div>
             <div class="inv-desc">
                 ${t.desc}
-                <span class="inv-sub" style="display:block; font-size:11px; color:#64748B; font-weight:500; margin-top:2px;">${subHtml}</span>
+                <span class="inv-sub" style="display:block; font-size:11px; color:#64748B;">${dia} ${mes} • ${t.cat}</span>
             </div>
             <div class="inv-val">${fmt(t.valor)}</div>
         </div>`;
     });
 }
 
-    // --- 2. PAGAMENTO DE FATURA (MODAL NOVO) ---
-    function abrirModalPagamentoFatura() {
+// 5. Pagamento de Fatura (Bridge)
+function abrirModalPagamentoFaturaComDados(idCartao, valorTotal) {
+    CARTAO_ATUAL_ID = idCartao;
+    // Força a data da fatura para a data do dashboard, pois é de lá que o clique veio
+    DATA_FATURA = new Date(DATA_ATUAL); 
+    
+    abrirModalPagamentoFatura(valorTotal);
+}
+
+function abrirModalPagamentoFatura(valorOverride) {
+    // Se veio valor por parâmetro usa, senão tenta pegar do texto
+    let valorNum = valorOverride;
+    if (valorNum === undefined) {
         const valorTexto = document.getElementById('hist-total-fatura').innerText;
-        const valorNum = parseFloat(valorTexto.replace('R$','').replace(/\./g,'').replace(',','.').trim());
-        
-        if(valorNum <= 0) return showCustomToast('Fatura zerada ou negativa.', 'warning');
-
-        document.getElementById('pg-valor').value = valorNum;
-        document.getElementById('pg-mes').innerText = document.getElementById('hist-card-mes').innerText;
-        document.getElementById('pg-cartao').innerText = document.getElementById('hist-card-name').innerText;
-        
-        // Popula contas (reusa função existente)
-        document.getElementById('pg-conta-origem').innerHTML = getAccountOptions(CONTAS_DB);
-        
-        abrirModal('pagar-fatura');
+        valorNum = parseFloat(valorTexto.replace('R$','').replace(/\./g,'').replace(',','.').trim());
     }
+    
+    if(valorNum <= 0) return showCustomToast('Fatura zerada ou negativa.', 'warning');
 
-    function confirmarPagamentoFatura() {
+    document.getElementById('pg-valor').value = valorNum;
+    
+    const mesStr = DATA_FATURA.toLocaleDateString('pt-BR', { month: 'long' });
+    document.getElementById('pg-mes').innerText = mesStr.charAt(0).toUpperCase() + mesStr.slice(1);
+    
+    // Busca nome do cartão
+    const cartao = CARTOES_DB.find(c => (c.ID_Cartao || c.id) === CARTAO_ATUAL_ID);
+    document.getElementById('pg-cartao').innerText = cartao ? (cartao.Nome_Cartao || cartao.nome) : 'Cartão';
+    
+    // Popula contas para pagar
+    document.getElementById('pg-conta-origem').innerHTML = getAccountOptions(CONTAS_DB);
+    
+    abrirModal('pagar-fatura');
+}
+
+function confirmarPagamentoFatura() {
     const valor = document.getElementById('pg-valor').value;
     const conta = document.getElementById('pg-conta-origem').value;
     
     if(!conta) return showCustomToast('Selecione a conta de pagamento.', 'error');
 
-    // Monta o objeto
-    const dados = {
-        cartaoId: CARTAO_ATUAL_ID, // ID do cartão que está aberto no modal
-        nomeCartao: document.getElementById('hist-card-name').innerText,
-        valor: valor,
-        data: getDataLocalISO(), // Usa a função nova pra não dar erro de dia
-        conta: conta,
-        obs: 'Pagamento referente a ' + document.getElementById('hist-card-mes').innerText
-    };
-
     const btn = event.target;
     setLoading(btn, true);
 
-    // CHAMA A FUNÇÃO ESPECÍFICA NO BACKEND (Veja o Passo 2 abaixo)
+    const dados = {
+        cartaoId: CARTAO_ATUAL_ID, 
+        valor: valor,
+        data: new Date().toISOString().split('T')[0], // Hoje
+        conta: conta,
+        mesRef: DATA_FATURA.getMonth(),
+        anoRef: DATA_FATURA.getFullYear()
+    };
+
     google.script.run
         .withSuccessHandler(res => {
             setLoading(btn, false);
             if(res.sucesso) {
                 fecharModal('pagar-fatura');
                 fecharModal('historico-cartao');
-                showCustomToast('Fatura paga e limite liberado!', 'success');
-                
-                // Recarrega TUDO para ver o limite voltar e o saldo do banco cair
-                carregarDashboard(); 
+                showCustomToast('Pagamento confirmado!', 'success');
+                carregarDashboard(); // Atualiza tudo (status, saldos, limites)
             } else {
                 showCustomToast('Erro: ' + res.erro, 'error');
             }
         })
-        .processarPagamentoFatura(dados); // Nova função no Backend
+        .withFailureHandler(err => {
+            setLoading(btn, false);
+            showCustomToast('Erro: ' + err.message, 'error');
+        })
+        .processarPagamentoFatura(dados);
 }
 
 function renderGraficoBarrasPremium(dados) {
