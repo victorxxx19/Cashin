@@ -3267,6 +3267,13 @@ function carregarDashboard() {
     google.script.run
         .withSuccessHandler(function(data) {
             setLoading(null, false);
+
+            // --- ADICIONE ESTAS 3 LINHAS AQUI ---
+            console.log("DADOS RECEBIDOS DO BACKEND:", data); 
+            if (data.cartoes) console.log("Cartões encontrados:", data.cartoes.length);
+            else console.error("A lista de cartões veio VAZIA ou NULA!");
+            // -------------------------------------
+
             DADOS_GLOBAIS = data;
             renderDashboard(data);
             
@@ -3675,31 +3682,6 @@ function calcularDatasCiclo(cartao, ano, mesIndex) {
     return { dataFechamento, dataVencimento };
 }
 
-function obterStatusFatura(cartao, valorFatura) {
-    // Se não tem fatura ou valor é zero
-    if (!valorFatura || valorFatura <= 0) {
-         return { texto: 'ABERTA', color: '#64748B', bg: '#F1F5F9', podePagar: false };
-    }
-
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-
-    // Pega o mês/ano que está sendo visualizado na tela
-    const mesTela = DATA_ATUAL.getMonth();
-    const anoTela = DATA_ATUAL.getFullYear();
-
-    const { dataFechamento, dataVencimento } = calcularDatasCiclo(cartao, anoTela, mesTela);
-
-    // Comparações
-    if (hoje > dataVencimento) {
-        return { texto: 'ATRASADA', color: '#DC2626', bg: '#FEE2E2', podePagar: true };
-    }
-    if (hoje >= dataFechamento) {
-        return { texto: 'FECHADA', color: '#2563EB', bg: '#EFF6FF', podePagar: true };
-    }
-    
-    return { texto: 'ABERTA', color: '#475569', bg: '#F1F5F9', podePagar: false };
-}
 
 // =========================================================
 // 3. FUNÇÃO AUXILIAR: STATUS DA FATURA
@@ -3729,102 +3711,157 @@ function obterStatusFatura(cartao, valorFatura) {
     return { texto: 'ABERTA', color: '#475569', bg: '#F1F5F9', podePagar: false };
 }
 
-// =========================================================
-// 3. FUNÇÃO DE RENDERIZAÇÃO (ADAPTADA AO SEU BACKEND ATUAL)
-// =========================================================
-function renderCartoes(listaOpcional) {
-    const container = document.getElementById('cards-container');
-    if(!container) return;
-    container.innerHTML = ''; 
-
-    // Usa a lista passada ou a global
-    const lista = listaOpcional || CARTOES_DB;
-
-    // DEBUG: Se a lista estiver vazia ou nula
-    if(!lista || lista.length === 0) {
-         console.warn("Lista de cartões vazia ou não carregada.");
-         container.innerHTML = '<div style="padding:20px; color:#94A3B8; text-align:center;">Nenhum cartão encontrado.</div>';
-         return;
+// --- CORREÇÃO 4: Lógica de Vencimento com Dia Útil ---
+function obterStatusFaturaComDiaUtil(cartao, valorFatura) {
+    if (valorFatura <= 0) {
+        // Se a fatura é 0, considera como "EM ABERTO" para novas compras ou "ZERADA"
+        return { texto: 'EM ABERTO', color: '#64748B', bg: '#F1F5F9', colorBarra: '#10B981', podePagar: false };
     }
 
-    lista.forEach(cartao => {
-        // --- AQUI ESTAVA O ERRO ---
-        // Seu backend manda 'faturaAtual' (número direto), não um array de faturas.
-        const valorFatura = parseFloat(cartao.faturaAtual || 0);
-        const totalUsado = parseFloat(cartao.totalUsado || 0);
-        const limiteTotal = parseFloat(cartao.limite || 0);
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const mesTela = DATA_ATUAL.getMonth();
+    const anoTela = DATA_ATUAL.getFullYear();
+
+    // 1. Calcula Vencimento Original
+    const diaVenc = parseInt(cartao.vencimento) || 10;
+    const dataVencimento = new Date(anoTela, mesTela, diaVenc);
+    
+    // 2. Ajuste de Dia Útil (Sábado -> Segunda, Domingo -> Segunda)
+    const diaSemana = dataVencimento.getDay(); // 0 = Dom, 6 = Sab
+    if (diaSemana === 6) { // Sábado
+        dataVencimento.setDate(dataVencimento.getDate() + 2); // +2 dias = Segunda
+    } else if (diaSemana === 0) { // Domingo
+        dataVencimento.setDate(dataVencimento.getDate() + 1); // +1 dia = Segunda
+    }
+    
+    dataVencimento.setHours(23, 59, 59, 999);
+
+    // 3. Calcula Fechamento (Simplificado)
+    const diaFech = parseInt(cartao.fechamento) || 1;
+    let dataFechamento = new Date(anoTela, mesTela, diaFech);
+    // Lógica simples: se fechamento > vencimento, é do mês anterior (não afeta tanto o status visual de pagamento)
+    if (diaFech > diaVenc) dataFechamento.setMonth(dataFechamento.getMonth() - 1);
+    
+    // 4. Determina Status
+    if (hoje > dataVencimento) {
+        return { texto: 'ATRASADA', color: '#DC2626', bg: '#FEE2E2', colorBarra: '#DC2626', podePagar: true };
+    } 
+    else if (hoje >= dataFechamento) {
+        return { texto: 'FECHADA', color: '#2563EB', bg: '#EFF6FF', colorBarra: '#F59E0B', podePagar: true };
+    } 
+    else {
+        return { texto: 'ABERTA', color: '#10B981', bg: '#DCFCE7', colorBarra: '#10B981', podePagar: false };
+    }
+}
+
+// Funções auxiliares (Se você não tiver elas globais, cole antes da renderCartoes)
+function formatCurrency(value) {
+  const numberValue = Number(value);
+  if (isNaN(numberValue)) return "R$ 0,00";
+  const roundedValue = Math.round(numberValue * 100) / 100;
+  return roundedValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
+}
+
+function getCardStatus(card, selectedMonthIndex, selectedYear) {
+  const hoje = new Date();
+  const currentMonth = hoje.getMonth(); 
+  const currentYear = hoje.getFullYear();
+  const currentDay = hoje.getDate();
+
+  if (selectedYear > currentYear) return "ABERTA";
+  if (selectedYear === currentYear && selectedMonthIndex > currentMonth) return "ABERTA";
+  if (selectedYear < currentYear || (selectedYear === currentYear && selectedMonthIndex < currentMonth)) return "FECHADA";
+  
+  if (selectedYear === currentYear && selectedMonthIndex === currentMonth) {
+    if (currentDay >= card.closingDay) return "FECHADA";
+  }
+  return "ABERTA";
+}
+
+// --- AQUI ESTÁ A FUNÇÃO COMO VOCÊ PEDIU (function renderCartoes) ---
+
+function renderCartoes(card) {
+  // Lógica de Status
+  // Certifique-se que selectedMonth e selectedYear estão acessíveis neste escopo
+  const status = getCardStatus(card, selectedMonth, selectedYear); 
+  
+  const statusColor = status === "ABERTA" 
+    ? "bg-emerald-100 text-emerald-700" 
+    : "bg-blue-100 text-blue-700";
+
+  const disponivel = card.limit - card.currentInvoice;
+  const percentUsed = Math.min((card.currentInvoice / card.limit) * 100, 100);
+
+  return (
+    <div key={card.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full relative">
+      
+      {/* Cabeçalho */}
+      <div className="flex justify-between items-start mb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center overflow-hidden border border-gray-100">
+             <img src={card.logo} alt={card.name} className="w-full h-full object-cover" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-800 text-base leading-tight">{card.name}</h3>
+            {/* Removido Final XXXX */}
+          </div>
+        </div>
+        <span className={`px-2 py-1 text-[10px] uppercase font-bold rounded-md tracking-wide ${statusColor}`}>
+          {status}
+        </span>
+      </div>
+
+      {/* Barra e Valores */}
+      <div className="mb-2">
+        <div className="flex justify-between text-xs mb-1.5">
+          <span className="text-gray-500 font-medium">
+            Usado: {formatCurrency(card.currentInvoice)}
+          </span>
+          {/* Destaque no Disponível */}
+          <span className="text-emerald-600 font-bold">
+            Disp: {formatCurrency(disponivel)}
+          </span>
+        </div>
         
-        // Calcula o limite disponível aqui no Front, já que o backend manda o total usado
-        const limiteDisp = limiteTotal - totalUsado;
-        
-        // Status visual
-        const status = obterStatusFatura(cartao, valorFatura);
-        
-        // Barra de progresso
-        let porcentagem = 0;
-        if(limiteTotal > 0) {
-            porcentagem = ((limiteTotal - limiteDisp) / limiteTotal) * 100;
-            porcentagem = Math.min(100, Math.max(0, porcentagem));
-        }
+        <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+          <div 
+            className={`h-full rounded-full transition-all duration-500 ${percentUsed > 90 ? 'bg-red-500' : 'bg-orange-400'}`}
+            style={{ width: `${percentUsed}%` }}
+          ></div>
+        </div>
+      </div>
 
-        // Tratamento da imagem
-        const instNome = (cartao.inst || 'outro').toLowerCase().trim().replace(/\s/g, '');
-        // Garante que Inter Gold vire 'inter' se a imagem for inter.png
-        const imgName = instNome.includes('inter') ? 'inter' : instNome;
-        const imgPath = `assets/${imgName}.png`;
+      {/* Fatura Atual (Espaçamento my-4) */}
+      <div className="bg-gray-50 rounded-xl p-4 my-4 border border-gray-100 flex justify-between items-center hover:bg-gray-100 transition-colors">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+            Fatura Atual
+          </span>
+          <span className="text-xs text-gray-500 font-medium mt-0.5">
+            Vence dia {card.dueDay}
+          </span>
+        </div>
+        <div className="text-lg font-bold text-gray-800">
+           {formatCurrency(card.currentInvoice)}
+        </div>
+      </div>
 
-        const html = `
-            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative group" id="card-${cartao.id}">
-                 <div class="flex justify-between items-start mb-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full flex items-center justify-center bg-gray-50">
-                            <img src="${imgPath}" onerror="this.src='https://via.placeholder.com/30?text=Card'" class="w-6 h-6 object-contain">
-                        </div>
-                        <div>
-                            <h3 class="font-semibold text-gray-800">${cartao.nome}</h3>
-                            <div class="flex items-center gap-2 mt-1">
-                                <span class="text-xs font-bold px-2 py-0.5 rounded" 
-                                      style="background:${status.bg}; color:${status.color}">
-                                    ${status.texto}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                    <button onclick="abrirModalEdicao('${cartao.id}')" class="text-gray-400 hover:text-blue-600">
-                        <i class="fas fa-pencil-alt"></i>
-                    </button>
-                </div>
-
-                <div class="space-y-1 mb-4">
-                    <p class="text-xs text-gray-500 font-medium uppercase">Disponível</p>
-                    <p class="text-xl font-bold text-green-600 limite-disponivel">
-                        ${fmt(limiteDisp)}
-                    </p>
-                    <div class="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>Fatura: ${fmt(valorFatura)}</span>
-                    </div>
-                </div>
-
-                <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                    <div class="h-full bg-green-500 rounded-full transition-all duration-500 progress-bar-fill" 
-                         style="width: ${porcentagem}%"></div>
-                </div>
-
-                <div class="mt-4 flex gap-2">
-                    <button onclick="abrirHistoricoCartao('${cartao.id}', '${cartao.nome}')" 
-                            class="flex-1 py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors">
-                        Detalhes
-                    </button>
-                    ${status.podePagar ? `
-                    <button onclick="abrirModalPagamentoFaturaComDados('${cartao.id}', ${valorFatura})" 
-                            class="flex-1 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
-                        Pagar
-                    </button>` : ''}
-                </div>
-            </div>
-        `;
-        container.innerHTML += html;
-    });
+      {/* Botões */}
+      <div className="grid grid-cols-2 gap-3 mt-auto">
+        <button className="bg-white border border-gray-200 text-gray-700 py-2.5 rounded-xl font-semibold text-sm hover:bg-gray-50 transition active:scale-95">
+          Extrato
+        </button>
+        <button 
+          onClick={() => handleOpenPayModal(card)} 
+          className="bg-blue-600 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-blue-700 transition shadow-lg shadow-blue-100 active:scale-95"
+        >
+          Pagar
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // 4. Modal de Histórico e Detalhes
