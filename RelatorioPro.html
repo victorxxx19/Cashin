@@ -1,0 +1,1113 @@
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<symbol id="icon-gemini" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M19.07 4.93L17.07 1.93L15.07 4.93L12.07 6.93L15.07 8.93L17.07 11.93L19.07 8.93L22.07 6.93L19.07 4.93M8.93 19.07L11.93 22.07L14.93 19.07L17.93 17.07L14.93 15.07L11.93 12.07L8.93 15.07L5.93 17.07L8.93 19.07M4.42 9.42L2.42 12.42L4.42 15.42L7.42 17.42L9.42 14.42L12.42 12.42L9.42 10.42L7.42 7.42L4.42 9.42Z"/>
+</symbol>
+
+<style>
+/* ============================================================ */
+/* CSS: VARIÁVEIS E TEMA                                */
+/* ============================================================ */
+:root {
+    --bg-rep-body: #F8FAFC;
+    --bg-rep-card: #FFFFFF;
+    --text-rep-primary: #0F172A;
+    --text-rep-secondary: #64748B;
+    --border-rep: #F1F5F9;
+    --primary-color: #2563EB;
+    --success-color: #10B981;
+    --danger-color: #EF4444;
+    --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+    --shadow-hover: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+    --modal-overlay: rgba(15, 23, 42, 0.4);
+    --blur-effect: blur(8px);
+}
+
+[data-theme="dark"] #view-relatorios-full {
+    --bg-rep-body: #0B1120;
+    --bg-rep-card: #1E293B;
+    --text-rep-primary: #F1F5F9;
+    --text-rep-secondary: #94A3B8;
+    --border-rep: #334155;
+    --primary-color: #3B82F6;
+    --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+    --modal-overlay: rgba(0, 0, 0, 0.7);
+}
+
+/* --- ESTRUTURA GERAL --- */
+#view-relatorios-full {
+    position: fixed !important; top: 0; left: 0; width: 100vw; height: 100vh;
+    background-color: var(--bg-rep-body); z-index: 99999 !important;
+    display: flex; flex-direction: column;
+    font-family: 'Plus Jakarta Sans', sans-serif; color: var(--text-rep-primary);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transform: scale(0.98); transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+#view-relatorios-full.active { opacity: 1; visibility: visible; pointer-events: auto; transform: scale(1); }
+
+/* --- HEADER FLUIDO --- */
+.exec-header {
+    height: auto; min-height: 80px; background: var(--bg-rep-card);
+    border-bottom: 1px solid var(--border-rep); display: flex; align-items: center; justify-content: space-between;
+    padding: 15px 40px; box-shadow: var(--shadow-soft); flex-wrap: wrap; gap: 20px; flex-shrink: 0;
+    z-index: 10;
+}
+.exec-header-left { display: flex; align-items: center; gap: 24px; }
+.btn-exec-back {
+    background: transparent; border: 1px solid var(--border-rep); color: var(--text-rep-secondary);
+    padding: 10px 18px; border-radius: 12px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; transition: 0.2s;
+    font-family: inherit; font-size: 0.9rem;
+}
+.btn-exec-back:hover { background: var(--bg-rep-body); color: var(--primary-color); border-color: var(--primary-color); }
+
+.exec-brand { display: flex; align-items: center; gap: 16px; border-left: 1px solid var(--border-rep); padding-left: 24px; }
+.logo-visible { height: 36px; width: auto; display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); }
+.brand-title { font-weight: 800; font-size: 1.4rem; color: var(--text-rep-primary); line-height: 1.1; letter-spacing: -0.5px; }
+.brand-subtitle { font-size: 0.85rem; color: var(--text-rep-secondary); font-weight: 500; }
+
+/* Botão IA (SVG INLINE para garantir exibição) */
+.btn-ai-sparkle {
+    background: transparent; border: none; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; transition: all 0.3s ease; margin-left: 4px;
+}
+.btn-ai-sparkle:hover { background: rgba(79, 172, 254, 0.1); transform: scale(1.1) rotate(10deg); }
+.btn-ai-sparkle svg { width: 22px; height: 22px; }
+
+/* FILTROS MODERNOS */
+.exec-header-center { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.filter-pills-group { display: flex; gap: 6px; background: var(--bg-rep-body); padding: 5px; border-radius: 14px; border: 1px solid var(--border-rep); }
+.btn-pill {
+    border: none; background: transparent; padding: 6px 16px; border-radius: 10px;
+    font-size: 0.85rem; font-weight: 600; color: var(--text-rep-secondary); cursor: pointer; transition: all 0.3s ease;
+    position: relative; overflow: hidden;
+}
+.btn-pill:hover { color: var(--primary-color); background: rgba(37, 99, 235, 0.05); }
+.btn-pill.active { background: var(--primary-color); color: #fff; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25); }
+.filter-pills-group.months .btn-pill { padding: 5px 12px; font-size: 0.75rem; }
+
+.btn-exec-icon {
+    width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--border-rep);
+    background: var(--bg-rep-card); color: var(--text-rep-secondary); cursor: pointer; display: grid; place-items: center; transition: 0.2s; font-size: 1.1rem;
+}
+.btn-exec-icon:hover { background: var(--bg-rep-body); color: var(--text-rep-primary); transform: translateY(-2px); }
+
+/* --- CONTEÚDO --- */
+.exec-content-area { flex: 1; overflow-y: auto; padding: 30px 40px; }
+.exec-container { max-width: 1400px; margin: 0 auto; padding-bottom: 60px; }
+
+/* KPIs PREMIUM */
+.exec-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; margin-bottom: 40px; }
+.exec-card {
+    background: var(--bg-rep-card); border-radius: 20px; border: 1px solid var(--border-rep);
+    box-shadow: var(--shadow-soft); padding: 28px; position: relative; overflow: hidden; transition: all 0.3s ease;
+}
+.card-clickable { cursor: pointer; }
+.card-clickable:hover { transform: translateY(-5px); box-shadow: var(--shadow-hover); border-color: var(--primary-color); }
+.card-clickable:active { transform: scale(0.98); }
+
+.kpi-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.kpi-icon-box { 
+    width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; font-size: 1.3rem; 
+    transition: transform 0.3s;
+}
+.exec-card:hover .kpi-icon-box { transform: scale(1.1) rotate(5deg); }
+
+.kpi-receita { background: #DCFCE7; color: #16A34A; }
+[data-theme="dark"] .kpi-receita { background: rgba(16, 185, 129, 0.15); }
+.kpi-despesa { background: #FEE2E2; color: #DC2626; }
+[data-theme="dark"] .kpi-despesa { background: rgba(239, 68, 68, 0.15); }
+.kpi-saldo { background: #DBEAFE; color: #2563EB; }
+[data-theme="dark"] .kpi-saldo { background: rgba(59, 130, 246, 0.15); }
+.kpi-econ { background: #F3E8FF; color: #9333EA; }
+[data-theme="dark"] .kpi-econ { background: rgba(147, 51, 234, 0.15); }
+
+.kpi-title { font-size: 0.85rem; font-weight: 700; color: var(--text-rep-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+.kpi-amount { font-size: 2rem; font-weight: 800; color: var(--text-rep-primary); display: block; letter-spacing: -1px; }
+.kpi-subtext { font-size: 0.85rem; color: var(--text-rep-secondary); margin-top: 6px; display: flex; align-items: center; gap: 6px; font-weight: 500; }
+.kpi-decor { position: absolute; bottom: -15px; right: -15px; opacity: 0.05; font-size: 6rem; pointer-events: none; transform: rotate(-15deg); }
+
+/* GRÁFICOS CLEAN */
+.exec-charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 30px; margin-bottom: 40px; }
+.chart-box {
+    background: var(--bg-rep-card); border-radius: 20px; padding: 30px;
+    border: 1px solid var(--border-rep); box-shadow: var(--shadow-soft); display: flex; flex-direction: column; width: 100%;
+}
+.chart-box-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+.chart-box-header h3 { margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-rep-primary); display: flex; align-items: center; gap: 10px; }
+.custom-legend { display: flex; gap: 20px; font-size: 0.85rem; font-weight: 600; color: var(--text-rep-secondary); }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.chart-canvas-wrapper { position: relative; width: 100%; flex: 1; min-height: 320px; }
+
+/* Lista de Categorias (Visual Clean) */
+.cat-list-exec.compact { flex: 1; overflow-y: auto; padding-right: 8px; max-height: 320px; display: flex; flex-direction: column; gap: 8px; }
+.cat-list-exec::-webkit-scrollbar { width: 5px; }
+.cat-list-exec::-webkit-scrollbar-thumb { background: var(--border-rep); border-radius: 3px; }
+
+.cat-row-modern {
+    display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; 
+    border-radius: 12px; background: transparent; border: 1px solid transparent;
+    cursor: pointer; transition: all 0.2s ease;
+}
+.cat-row-modern:hover { background: var(--bg-rep-body); border-color: var(--border-rep); transform: translateX(4px); }
+.cat-row-modern.active { background: var(--bg-rep-body); border-color: var(--primary-color); }
+
+.cat-icon-box { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-size: 1rem; }
+.cat-name { font-weight: 700; color: var(--text-rep-primary); font-size: 0.9rem; }
+.cat-percent { font-size: 0.75rem; color: var(--text-rep-secondary); font-weight: 600; margin-left: 6px; opacity: 0.7; }
+.cat-value { font-weight: 700; color: var(--text-rep-primary); font-size: 0.95rem; }
+
+/* TABELA REDESENHADA (Estilo Lista Fluida) */
+.full-width-section { margin-bottom: 40px; }
+.balanco-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; /* Espaço entre linhas */ }
+
+.balanco-head {
+    display: grid; grid-template-columns: 80px 1fr 120px 120px 120px;
+    padding: 0 20px 10px 20px; 
+    font-size: 0.75rem; font-weight: 700; color: var(--text-rep-secondary); text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+.balanco-row {
+    display: grid; grid-template-columns: 80px 1fr 120px 120px 120px;
+    padding: 16px 20px; 
+    background: var(--bg-rep-card);
+    border: 1px solid var(--border-rep);
+    border-radius: 14px;
+    align-items: center; 
+    font-size: 0.9rem; color: var(--text-rep-primary); 
+    transition: all 0.2s ease; cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+.balanco-row:hover { transform: translateY(-2px); box-shadow: var(--shadow-soft); border-color: var(--primary-color); }
+
+.cell-month { font-weight: 800; color: var(--text-rep-secondary); text-transform: uppercase; font-size: 0.8rem; }
+.cell-val { font-family: 'Plus Jakarta Sans', monospace; font-weight: 600; font-size: 0.95rem; opacity: 0.9; }
+.cell-res { font-weight: 800; text-align: right; font-size: 1rem; }
+
+/* --- CORREÇÃO 3: CSS Ajustado das Labels --- */
+.bar-container {
+    width: 100%; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding-right: 20px;
+}
+.bar-track-group {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+}
+/* Aumentei width e removi margin negativa */
+.bar-label-mini { font-size: 0.7rem; font-weight: 700; width: 60px; text-align: left; }
+
+.bar-track-bg {
+    flex: 1; height: 6px; background: var(--border-rep); border-radius: 3px; overflow: hidden;
+}
+.bar-fill { 
+    height: 100%; border-radius: 3px; 
+    min-width: 2px; /* Garante que sempre apareça um pouco, evitando sumiço visual */
+    transition: width 0.5s ease-out;
+}
+
+/* Modal IA */
+.ai-insights-modal {
+    position: fixed; top: 90px; right: 40px; width: 380px;
+    background: rgba(255, 255, 255, 0.95); border: 1px solid var(--border-rep);
+    border-radius: 20px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.15);
+    z-index: 100000; transform: translateY(-20px); opacity: 0; visibility: hidden;
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    backdrop-filter: blur(10px);
+}
+[data-theme="dark"] .ai-insights-modal { background: rgba(30, 41, 59, 0.95); border-color: #334155; }
+.ai-insights-modal.active { transform: translateY(0); opacity: 1; visibility: visible; }
+.ai-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.ai-brand { font-weight: 800; background: -webkit-linear-gradient(0deg, #4facfe 0%, #f687b3 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.1rem; }
+.ai-body { font-size: 0.95rem; color: var(--text-rep-primary); line-height: 1.6; }
+
+/* Modal Drill-Down */
+#modal-drilldown {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: var(--modal-overlay); z-index: 999999;
+    display: flex; justify-content: flex-end; opacity: 0; visibility: hidden; transition: all 0.3s;
+    backdrop-filter: blur(4px);
+}
+#modal-drilldown.active { opacity: 1; visibility: visible; }
+.drilldown-panel {
+    width: 600px; max-width: 95%; height: 100%;
+    background: var(--bg-rep-card); box-shadow: -10px 0 40px rgba(0,0,0,0.2);
+    transform: translateX(100%); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex; flex-direction: column;
+}
+#modal-drilldown.active .drilldown-panel { transform: translateX(0); }
+.drill-header { padding: 24px 30px; border-bottom: 1px solid var(--border-rep); display: flex; justify-content: space-between; align-items: center; background: var(--bg-rep-body); }
+.drill-title h3 { margin: 0; font-size: 1.3rem; color: var(--text-rep-primary); font-weight: 800; }
+.drill-title span { font-size: 0.9rem; color: var(--text-rep-secondary); margin-top: 4px; display: block; font-weight: 500;}
+.btn-close-drill { background: var(--bg-rep-card); border: 1px solid var(--border-rep); width: 36px; height: 36px; border-radius: 10px; font-size: 1rem; color: var(--text-rep-secondary); cursor: pointer; transition: 0.2s; display: grid; place-items: center; }
+.btn-close-drill:hover { background: #EF4444; color: white; border-color: #EF4444; }
+.drill-content { flex: 1; overflow-y: auto; padding: 20px 30px; }
+.drill-list-item { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--border-rep); transition: 0.2s; border-radius: 12px; margin-bottom: 4px; }
+.drill-list-item:hover { background: var(--bg-rep-body); }
+.drill-item-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 1.1rem; margin-right: 16px; flex-shrink: 0; }
+.drill-item-desc { font-weight: 700; color: var(--text-rep-primary); font-size: 1rem; margin-bottom: 2px; }
+.drill-item-sub { font-size: 0.8rem; color: var(--text-rep-secondary); display: flex; gap: 8px; align-items: center; font-weight: 500; }
+.drill-item-val { font-weight: 800; font-size: 1.1rem; text-align: right; font-family: 'Plus Jakarta Sans', monospace; }
+
+/* --- CSS PREVIEW --- */
+
+.print-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.7); 
+    z-index: 999999;
+    display: flex; justify-content: center; align-items: flex-start;
+    padding: 30px 10px;
+    overflow-y: auto;
+    opacity: 0; visibility: hidden; transition: opacity 0.3s;
+}
+.print-overlay.active { opacity: 1; visibility: visible; }
+
+.print-paper {
+    width: 800px; 
+    max-width: 100%; 
+    background: white; color: #000;
+    padding: 40px; 
+    margin-bottom: 80px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    border-radius: 6px;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+.print-controls {
+    position: fixed; bottom: 20px; right: 20px; 
+    display: flex; gap: 10px; 
+    z-index: 1000000;
+}
+.btn-action { 
+    padding: 10px 20px; border-radius: 8px; border: 1px solid #ccc;
+    font-weight: 600; cursor: pointer; transition: 0.2s;
+}
+
+/* --- SUBSTITUA O BLOCO @media print POR ESTE --- */
+@media print {
+    @page { 
+        size: A4; 
+        margin: 10mm; 
+    }
+    
+    /* 1. Forçar fundo branco e remover altura fixa do site */
+    html, body {
+        width: 100%;
+        height: auto !important; 
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background-color: #FFFFFF !important; /* Mata o fundo cinza */
+        overflow: visible !important;
+    }
+
+    /* 2. ESCONDER TUDO (Remove do fluxo de layout) */
+    body > * {
+        display: none !important;
+    }
+
+    /* 3. RE-EXIBIR APENAS O PREVIEW (Traz de volta ao fluxo) */
+    #analytics-print-preview {
+        display: block !important;
+        position: relative !important; /* Relativo flui melhor que absolute aqui */
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: auto !important; /* Altura se ajusta ao conteúdo */
+        margin: 0 !important;
+        padding: 0 !important;
+        background-color: #FFFFFF !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+
+    /* Garante que os filhos do preview estejam visíveis */
+    #analytics-print-preview * {
+        visibility: visible !important;
+    }
+
+    /* 4. Ajustes finos de quebra de página */
+    .print-paper {
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }
+
+    .balanco-row, tr, img, div {
+        page-break-inside: avoid; /* Evita cortar textos/linhas no meio */
+    }
+
+    /* 5. Esconder botões de controle */
+    .print-controls, .no-print {
+        display: none !important;
+    }
+}
+
+@media (max-width: 1024px) {
+    .exec-charts-row { grid-template-columns: 1fr; }
+    .exec-header { flex-direction: column; align-items: stretch; height: auto; padding-bottom: 20px; }
+    .filter-pills-group { justify-content: center; flex-wrap: wrap; }
+    .balanco-head, .balanco-row { grid-template-columns: 50px 1fr 90px; }
+}
+
+</style>
+
+<div id="view-relatorios-full">
+    
+    <header class="exec-header">
+        <div class="exec-header-left">
+            <button onclick="fecharRelatoriosPro()" class="btn-exec-back">
+                <i class="fas fa-arrow-left"></i> Voltar
+            </button>
+            <div class="exec-brand">
+                <img id="relatorio-app-logo" src="" class="logo-visible">
+                
+                <div style="display:flex; flex-direction:column; justify-content:center;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="brand-title">Relatório Geral de Finanças</span>
+                        <button onclick="acaoInsightsIA()" class="btn-ai-sparkle" title="Gerar Insights">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="url(#grad-ai-html)">
+                                <defs>
+                                    <linearGradient id="grad-ai-html" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" style="stop-color:#4facfe;stop-opacity:1" />
+                                        <stop offset="100%" style="stop-color:#f687b3;stop-opacity:1" />
+                                    </linearGradient>
+                                </defs>
+                                <path d="M19.07 4.93L17.07 1.93L15.07 4.93L12.07 6.93L15.07 8.93L17.07 11.93L19.07 8.93L22.07 6.93L19.07 4.93M8.93 19.07L11.93 22.07L14.93 19.07L17.93 17.07L14.93 15.07L11.93 12.07L8.93 15.07L5.93 17.07L8.93 19.07M4.42 9.42L2.42 12.42L4.42 15.42L7.42 17.42L9.42 14.42L12.42 12.42L9.42 10.42L7.42 7.42L4.42 9.42Z"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <span class="brand-subtitle">Visão estratégica financeira</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="exec-header-center">
+            <div id="filter-years-wrapper" class="filter-pills-group"></div>
+            <div id="filter-months-wrapper" class="filter-pills-group months"></div>
+        </div>
+
+        <div class="exec-header-right">
+            <button class="btn-exec-icon" onclick="gerarPDFRelatorio()" title="Visualizar Impressão / PDF">
+                <i class="fas fa-print"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="exec-content-area">
+        <div class="exec-container">
+
+            <div class="exec-kpi-grid">
+                <div class="exec-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon-box kpi-saldo"><i class="fas fa-wallet"></i></div>
+                        <span class="kpi-title">Balanço Mensal</span>
+                    </div>
+                    <span class="kpi-amount" id="rep-saldo-anual">R$ 0,00</span>
+                    <span class="kpi-subtext">Resultado líquido</span>
+                    <i class="fas fa-coins kpi-decor" style="color:#2563EB;"></i>
+                </div>
+
+                <div class="exec-card card-clickable" onclick="abrirDetalhesDrill('Receita')">
+                    <div class="kpi-header">
+                        <div class="kpi-icon-box kpi-receita"><i class="fas fa-arrow-up"></i></div>
+                        <span class="kpi-title">Receitas</span>
+                    </div>
+                    <span class="kpi-amount" id="rep-total-receita">R$ 0,00</span>
+                    <span class="kpi-subtext">Ver detalhes <i class="fas fa-chevron-right" style="font-size:0.7em; margin-left:4px;"></i></span>
+                    <i class="fas fa-chart-line kpi-decor" style="color:#16A34A;"></i>
+                </div>
+
+                <div class="exec-card card-clickable" onclick="abrirDetalhesDrill('Despesa')">
+                    <div class="kpi-header">
+                        <div class="kpi-icon-box kpi-despesa"><i class="fas fa-arrow-down"></i></div>
+                        <span class="kpi-title">Despesas</span>
+                    </div>
+                    <span class="kpi-amount" id="rep-total-despesa">R$ 0,00</span>
+                    <span class="kpi-subtext">Ver detalhes <i class="fas fa-chevron-right" style="font-size:0.7em; margin-left:4px;"></i></span>
+                    <i class="fas fa-chart-area kpi-decor" style="color:#DC2626;"></i>
+                </div>
+
+                <div class="exec-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon-box kpi-econ"><i class="fas fa-piggy-bank"></i></div>
+                        <span class="kpi-title">Taxa de Economia</span>
+                    </div>
+                    <span class="kpi-amount" id="rep-taxa-econ">0%</span>
+                    <span class="kpi-subtext">% da receita poupada</span>
+                    <i class="fas fa-percentage kpi-decor" style="color:#9333EA;"></i>
+                </div>
+            </div>
+
+            <div class="exec-charts-row">
+                <div class="chart-box">
+                    <div class="chart-box-header">
+                        <h3><i class="fas fa-chart-line" style="color:#2563EB"></i> Tendência Financeira</h3>
+                        <div class="custom-legend">
+                            <span><span class="legend-dot" style="background:#10B981"></span>Entradas</span>
+                            <span><span class="legend-dot" style="background:#EF4444"></span>Saídas</span>
+                        </div>
+                    </div>
+                    <div class="chart-canvas-wrapper">
+                        <canvas id="chart-rel-fluxo"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-box">
+                    <div class="chart-box-header">
+                        <h3><i class="fas fa-chart-pie" style="color:#F59E0B"></i> Gastos por Categorias</h3>
+                    </div>
+                    <div class="chart-split-layout-vertical">
+                        <div class="donut-wrapper"><canvas id="chart-rel-cat"></canvas></div>
+                        <div id="lista-relatorio-categorias" class="cat-list-exec compact"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="full-width-section" style="margin-bottom: 30px;">
+                <div class="chart-box">
+                    <div class="chart-box-header">
+                        <h3><i class="fas fa-chart-bar" style="color:#6366F1"></i> Comparativo Mensal</h3>
+                    </div>
+                    <div class="chart-canvas-wrapper" style="height: 300px;">
+                        <canvas id="chart-rel-barras"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="full-width-section">
+                <div class="chart-box">
+                    <div class="chart-box-header">
+                        <h3><i class="fas fa-table" style="color:#64748B"></i> Detalhamento Mensal</h3>
+                    </div>
+                    <div class="balanco-table" style="width:100%">
+                        <div class="balanco-head">
+                            <div>Mês</div>
+                            <div>Volume - Receita x Despesas</div>
+                            <div style="text-align:right">Receita</div>
+                            <div style="text-align:right">Despesa</div>
+                            <div style="text-align:right">Balanço</div>
+                        </div>
+                        <div id="container-tabela-relatorio"></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<div id="modal-drilldown">
+    <div class="drilldown-panel">
+        <div class="drill-header">
+            <div class="drill-title">
+                <h3 id="drill-title-text">Transações</h3>
+                <span id="drill-subtitle-text">Detalhamento dos registros</span>
+            </div>
+            <button class="btn-close-drill" onclick="fecharDetalhesDrill()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="drill-content" id="drill-list-container"></div>
+    </div>
+</div>
+
+<div id="modal-insights-ia" class="ai-insights-modal">
+    <div class="ai-header">
+        <img src="" id="logo-ai-modal" style="height:32px; width:auto; margin-right:10px;">
+        <span class="ai-brand" style="font-weight:800; color:var(--text-rep-primary); font-size:1.1rem;">Cash In AI</span>
+        <button onclick="document.getElementById('modal-insights-ia').classList.remove('active')" style="margin-left:auto; border:none; background:transparent; cursor:pointer; color:inherit;"><i class="fas fa-times"></i></button>
+    </div>
+    <div id="ai-insights-content" class="ai-body">
+        Analisando seus dados...
+    </div>
+</div>
+
+<div id="analytics-print-preview" class="print-overlay">
+    <div class="print-paper">
+        <div id="print-report-content"></div>
+
+        <div class="print-controls no-print">
+            <button onclick="window.print()" class="btn-action btn-print-final" style="background:#2563EB; color:white;"><i class="fas fa-print"></i> Imprimir / PDF</button>
+            <button onclick="fecharPrintPreview()" class="btn-action secondary"><i class="fas fa-times"></i> Fechar Preview</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- ESTADO ---
+let filtroRelatorio = { ano: new Date().getFullYear(), mes: 'todos', charts: {} };
+
+// --- CONFIGURAÇÃO CHART.JS ---
+Chart.register(ChartDataLabels);
+Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
+Chart.defaults.color = '#64748B';
+Chart.defaults.plugins.datalabels.display = false; // Desliga por padrão para não poluir
+
+// --- ABRIR / FECHAR ---
+function abrirRelatoriosExecutivos() {
+    const view = document.getElementById('view-relatorios-full');
+    if (!view) return;
+
+    // Sincroniza Logos
+    const imgLogo = document.getElementById('relatorio-app-logo');
+    const logoModal = document.getElementById('logo-ai-modal');
+    if (imgLogo && typeof AI_LOGO_SRC !== 'undefined' && AI_LOGO_SRC) {
+        imgLogo.src = AI_LOGO_SRC; imgLogo.style.display = 'block';
+        if(logoModal) logoModal.src = AI_LOGO_SRC;
+    }
+
+    renderizarBotoesFiltro();
+    view.classList.add('active');
+    setTimeout(() => { atualizarRelatorioCompleto(); }, 100);
+}
+
+function fecharRelatoriosPro() { document.getElementById('view-relatorios-full').classList.remove('active'); }
+
+// --- FILTROS DINÂMICOS ---
+function renderizarBotoesFiltro() {
+    if (!DADOS_GLOBAIS || !DADOS_GLOBAIS.todasTransacoes) return;
+
+    const divAnos = document.getElementById('filter-years-wrapper');
+    const divMeses = document.getElementById('filter-months-wrapper');
+    
+    const anosComDados = new Set();
+    const mesesComDadosNoAnoAtual = new Set(); 
+
+    DADOS_GLOBAIS.todasTransacoes.forEach(t => {
+        let d = t.data instanceof Date ? t.data : new Date(t.data);
+        if(!isNaN(d.getTime())) {
+            anosComDados.add(d.getFullYear());
+            if(d.getFullYear() === filtroRelatorio.ano) {
+                mesesComDadosNoAnoAtual.add(d.getMonth());
+            }
+        }
+    });
+
+    if(anosComDados.size === 0) anosComDados.add(new Date().getFullYear());
+    const listaAnos = Array.from(anosComDados).sort((a,b) => a - b);
+
+    divAnos.innerHTML = listaAnos.map(a => 
+        `<button class="btn-pill ${a === filtroRelatorio.ano ? 'active' : ''}" onclick="mudarFiltroAno(${a})">${a}</button>`
+    ).join('');
+
+    const nomesMeses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    let htmlMeses = `<button class="btn-pill ${filtroRelatorio.mes === 'todos' ? 'active' : ''}" onclick="mudarFiltroMes('todos')">Todos</button>`;
+    
+    nomesMeses.forEach((m, idx) => {
+        if(mesesComDadosNoAnoAtual.has(idx) || idx === filtroRelatorio.mes) {
+            const ativo = (idx === filtroRelatorio.mes) ? 'active' : '';
+            htmlMeses += `<button class="btn-pill ${ativo}" onclick="mudarFiltroMes(${idx})">${m}</button>`;
+        }
+    });
+    divMeses.innerHTML = htmlMeses;
+}
+
+function mudarFiltroAno(ano) { 
+    filtroRelatorio.ano = ano; filtroRelatorio.mes = 'todos'; 
+    renderizarBotoesFiltro(); atualizarRelatorioCompleto(); 
+}
+function mudarFiltroMes(mes) { 
+    filtroRelatorio.mes = mes; 
+    renderizarBotoesFiltro(); atualizarRelatorioCompleto(); 
+}
+
+// --- DADOS ---
+function atualizarRelatorioCompleto() {
+    if (typeof DADOS_GLOBAIS === 'undefined' || !DADOS_GLOBAIS.todasTransacoes) return;
+
+    const transacoes = DADOS_GLOBAIS.todasTransacoes;
+    const ano = filtroRelatorio.ano;
+    const mesFiltro = filtroRelatorio.mes;
+
+    const filtradas = transacoes.filter(t => {
+        let d = t.data instanceof Date ? t.data : new Date(t.data);
+        if (isNaN(d.getTime())) return false;
+        const matchAno = d.getFullYear() === ano;
+        const matchMes = (mesFiltro === 'todos') ? true : d.getMonth() === mesFiltro;
+        return matchAno && matchMes;
+    });
+
+    const dadosProc = processarTotais(filtradas, transacoes, ano);
+
+    renderKPIs(dadosProc);
+    renderChartFluxo(document.getElementById('chart-rel-fluxo'), dadosProc.meses);
+    renderChartDonutInterativo(document.getElementById('chart-rel-cat'), dadosProc.categorias, dadosProc.totais.despesa);
+    renderChartBarrasComparativo(document.getElementById('chart-rel-barras'), dadosProc.meses);
+    renderTabelaDetalhada(dadosProc.meses, dadosProc.maxAno);
+}
+
+function processarTotais(listaFiltrada, listaCompleta, anoRef) {
+    const meses = Array.from({length: 12}, () => ({ r: 0, d: 0, idx: 0 }));
+    const cats = {};
+    let totRec = 0, totDesp = 0;
+    
+    // Maximo Mensal para Escala (Soma real)
+    let maxValAno = 0;
+    const somaMensalR = Array(12).fill(0);
+    const somaMensalD = Array(12).fill(0);
+    
+    listaCompleta.forEach(t => {
+        let d = t.data instanceof Date ? t.data : new Date(t.data);
+        if (d.getFullYear() === anoRef) {
+            let val = parseFloat(t.valor) || 0;
+            if (t.tipo === 'Receita') somaMensalR[d.getMonth()] += val;
+            else if (t.tipo.includes('Despesa')) somaMensalD[d.getMonth()] += val;
+        }
+    });
+    maxValAno = Math.max(...somaMensalR, ...somaMensalD);
+    if(maxValAno === 0) maxValAno = 1;
+
+    listaFiltrada.forEach(t => {
+        let val = parseFloat(t.valor) || 0;
+        let d = (t.data instanceof Date) ? t.data : new Date(t.data);
+        let mIdx = d.getMonth();
+
+        if (t.tipo === 'Receita') {
+            meses[mIdx].r += val;
+            totRec += val;
+        } else if (t.tipo.includes('Despesa')) {
+            meses[mIdx].d += val;
+            totDesp += val;
+            
+            let cNome = t.cat || 'Outros';
+            let sNome = t.subcat || 'Geral';
+            if(!cats[cNome]) {
+                let cor = '#64748B', icone = 'fas fa-tag';
+                if(DADOS_GLOBAIS.listaCompleta) {
+                    let meta = DADOS_GLOBAIS.listaCompleta.find(x => x.Categoria === cNome);
+                    if(meta) { cor = meta.Cor; icone = meta.Icone; }
+                }
+                cats[cNome] = { total: 0, subs: {}, cor: cor, icone: icone };
+            }
+            cats[cNome].total += val;
+            cats[cNome].subs[sNome] = (cats[cNome].subs[sNome] || 0) + val;
+        }
+    });
+
+    return { meses, categorias: cats, totais: { receita: totRec, despesa: totDesp, saldo: totRec - totDesp }, maxAno: maxValAno };
+}
+
+// --- RENDERIZADORES ---
+function renderKPIs(dados) {
+    const fmt = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    document.getElementById('rep-total-receita').innerText = fmt(dados.totais.receita);
+    document.getElementById('rep-total-despesa').innerText = fmt(dados.totais.despesa);
+    const elSaldo = document.getElementById('rep-saldo-anual');
+    elSaldo.innerText = fmt(dados.totais.saldo);
+    elSaldo.style.color = dados.totais.saldo >= 0 ? '#2563EB' : '#EF4444';
+    const elEcon = document.getElementById('rep-taxa-econ');
+    if(elEcon) {
+        let taxa = dados.totais.receita > 0 ? (dados.totais.saldo / dados.totais.receita) * 100 : 0;
+        elEcon.innerText = taxa.toFixed(1) + '%';
+    }
+}
+
+// Gráfico 1: Fluxo
+function renderChartFluxo(ctx, mesesData) {
+    if (filtroRelatorio.charts.fluxo) filtroRelatorio.charts.fluxo.destroy();
+    
+    const ctxGrad = ctx.getContext('2d');
+    const gradRec = ctxGrad.createLinearGradient(0,0,0,400); gradRec.addColorStop(0,'rgba(16,185,129,0.4)'); gradRec.addColorStop(1,'rgba(16,185,129,0)');
+    const gradDesp = ctxGrad.createLinearGradient(0,0,0,400); gradDesp.addColorStop(0,'rgba(239,68,68,0.25)'); gradDesp.addColorStop(1,'rgba(239,68,68,0)');
+
+    filtroRelatorio.charts.fluxo = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'],
+            datasets: [
+                { label: 'Entradas', data: mesesData.map(m => m.r), borderColor: '#10B981', backgroundColor: gradRec, fill: true, tension: 0.4 },
+                { label: 'Saídas', data: mesesData.map(m => m.d), borderColor: '#EF4444', backgroundColor: gradDesp, fill: true, tension: 0.4 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: {display:false}, datalabels: { display: false } },
+            scales: { x: {grid:{display:false}}, y: {grid:{color:'rgba(0,0,0,0.05)'}} }
+        }
+    });
+}
+
+// Gráfico 2: Categorias
+function renderChartDonutInterativo(ctx, catsObj, totalDesp) {
+    let lista = Object.keys(catsObj).map(k => ({ nome: k, valor: catsObj[k].total, cor: catsObj[k].cor, icone: catsObj[k].icone, subs: catsObj[k].subs })).sort((a,b) => b.valor - a.valor);
+    let top = lista.slice(0, 6);
+    let resto = lista.slice(6).reduce((acc, i) => acc + i.valor, 0);
+    if(resto > 0) top.push({ nome: 'Outros', valor: resto, cor: '#94A3B8', icone: 'fas fa-ellipsis-h', subs: {} });
+
+    if (filtroRelatorio.charts.donut) filtroRelatorio.charts.donut.destroy();
+
+    filtroRelatorio.charts.donut = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: top.map(x => x.nome),
+            datasets: [{ data: top.map(x => x.valor), backgroundColor: top.map(x => x.cor), borderWidth: 0 }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, cutout: '65%',
+            plugins: { legend: {display:false}, datalabels: { display: false } }
+        }
+    });
+
+    const container = document.getElementById('lista-relatorio-categorias');
+    container.innerHTML = '';
+    const fmt = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
+
+    lista.forEach((cat, index) => {
+        let pct = totalDesp > 0 ? ((cat.valor / totalDesp) * 100).toFixed(1) : 0;
+        const divId = `sub-wrapper-exec-${index}`;
+        const subsOrd = Object.keys(cat.subs).map(s => ({n:s, v:cat.subs[s]})).sort((a,b)=>b.v - a.v);
+        let subHtml = subsOrd.map(s => `
+            <div class="sub-item">
+                <span class="sub-name">${s.n}</span>
+                <div class="sub-stats"><span class="sub-pct" style="color:${cat.cor}; background:${cat.cor}20">${((s.v/cat.valor)*100).toFixed(0)}%</span><span class="sub-val">${fmt(s.v)}</span></div>
+            </div>`).join('');
+
+        let div = document.createElement('div');
+        div.innerHTML = `
+            <div class="cat-row-modern" onclick="toggleSubListaExec('${divId}', this)" style="border-left:3px solid ${cat.cor}">
+                <div class="cat-info">
+                    <div class="cat-icon-box" style="background:${cat.cor}20; color:${cat.cor}"><i class="${cat.icone}"></i></div>
+                    <div><div style="font-weight:700; font-size:0.9rem;">${cat.nome}</div><div style="font-size:0.75rem; color:var(--text-rep-secondary);">${pct}%</div></div>
+                </div>
+                <div class="cat-info"><div class="cat-value">${fmt(cat.valor)}</div><i class="fas fa-chevron-down cat-chevron"></i></div>
+            </div>
+            <div id="${divId}" class="sub-list-wrapper">${subHtml}</div>`;
+        container.appendChild(div);
+    });
+}
+
+function toggleSubListaExec(id, row) {
+    const el = document.getElementById(id);
+    const open = el.classList.contains('show');
+    document.querySelectorAll('.sub-list-wrapper').forEach(e => e.classList.remove('show'));
+    document.querySelectorAll('.cat-row-modern').forEach(e => e.classList.remove('active'));
+    if(!open) { el.classList.add('show'); row.classList.add('active'); }
+}
+
+// Gráfico 3: Barras Comparativo
+function renderChartBarrasComparativo(ctx, mesesData) {
+    if (filtroRelatorio.charts.barras) filtroRelatorio.charts.barras.destroy();
+    
+    filtroRelatorio.charts.barras = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'],
+            datasets: [
+                { label: 'Receita', data: mesesData.map(m => m.r), backgroundColor: '#10B981', borderRadius:4, barPercentage: 0.6 },
+                { label: 'Despesa', data: mesesData.map(m => m.d), backgroundColor: '#EF4444', borderRadius:4, barPercentage: 0.6 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { 
+                legend: {display:false},
+                datalabels: {
+                    display: true, anchor: 'end', align: 'top', color: '#64748b', font: {size: 9, weight:'bold'},
+                    formatter: (val) => val > 0 ? val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''
+                }
+            },
+            scales: { y: {grid:{color:'rgba(0,0,0,0.05)'}}, x: {grid:{display:false}} }
+        }
+    });
+}
+
+function renderTabelaDetalhada(mesesData, maxAno) {
+    const container = document.getElementById('container-tabela-relatorio');
+    container.innerHTML = '';
+    const nomes = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+    const fmt = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    mesesData.forEach((m, i) => {
+        let saldo = m.r - m.d;
+        let corSaldo = saldo >= 0 ? '#10B981' : '#EF4444';
+        
+        let pctR = maxAno > 0 ? (m.r / maxAno) * 100 : 0;
+        let pctD = maxAno > 0 ? (m.d / maxAno) * 100 : 0;
+        
+        let html = `
+        <div class="balanco-row" onclick="abrirDetalhesDrill('Mes', ${i})">
+            <div class="cell-month">${nomes[i]}</div>
+            <div class="bar-container">
+               <div class="bar-track-group">
+                    <div class="bar-label-mini" style="color:#10B981">Receitas</div>
+                    <div class="bar-track-bg" style="background: var(--border-rep);">
+                        <div class="bar-fill" style="width:${pctR}%; background:#10B981;"></div>
+                    </div>
+                </div>
+                <div class="bar-track-group">
+                    <div class="bar-label-mini" style="color:#EF4444">Despesas</div>
+                    <div class="bar-track-bg" style="background: var(--border-rep);">
+                        <div class="bar-fill" style="width:${pctD}%; background:#EF4444;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="cell-val" style="color:#10B981; text-align:right">${fmt(m.r)}</div>
+            <div class="cell-val" style="color:#EF4444; text-align:right">${fmt(m.d)}</div>
+            <div class="cell-res" style="color:${corSaldo}; text-align:right">${fmt(saldo)}</div>
+        </div>`;
+        container.insertAdjacentHTML('beforeend', html);
+    });
+}
+
+
+// Drill Down
+function abrirDetalhesDrill(tipo, mesIndexOpcional) {
+    const modal = document.getElementById('modal-drilldown');
+    const container = document.getElementById('drill-list-container');
+    const title = document.getElementById('drill-title-text');
+    const subtitle = document.getElementById('drill-subtitle-text');
+    
+    let lista = DADOS_GLOBAIS.todasTransacoes.filter(t => {
+        let d = new Date(t.data);
+        if (d.getFullYear() !== filtroRelatorio.ano) return false;
+        let mesAlvo = (typeof mesIndexOpcional === 'number') ? mesIndexOpcional : 
+                      (filtroRelatorio.mes !== 'todos' ? filtroRelatorio.mes : null);
+        if (mesAlvo !== null && d.getMonth() !== mesAlvo) return false;
+        if (tipo === 'Mes') return true;
+        if (tipo === 'Receita' && t.tipo !== 'Receita') return false;
+        if (tipo === 'Despesa' && !t.tipo.includes('Despesa')) return false;
+        return true;
+    });
+
+    lista.sort((a,b) => new Date(b.data) - new Date(a.data));
+    let nomeMes = (typeof mesIndexOpcional === 'number') ? ' de ' + ['Janeiro','Fevereiro','Março','Abril','Maio','Jun','Jul','Agosto','Setembro','Outubro','Novembro','Dezembro'][mesIndexOpcional] : '';
+
+    title.innerText = `Detalhes de ${tipo}${nomeMes}`;
+    subtitle.innerText = `${lista.length} transações`;
+
+    if (lista.length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:#94a3b8; margin-top:20px;">Nenhum registro.</div>';
+    } else {
+        container.innerHTML = lista.map(t => {
+            const fmt = parseFloat(t.valor).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+            const d = new Date(t.data).toLocaleDateString('pt-BR');
+            let iconClass = 'fas fa-money-bill-wave', iconColor = '#10B981', bgIcon = '#DCFCE7';
+            if (t.tipo === 'Despesa_Cartao') { iconClass = 'far fa-credit-card'; iconColor = '#F59E0B'; bgIcon = '#FEF3C7'; }
+            else if (t.tipo === 'Despesa') { iconClass = 'fas fa-shopping-bag'; iconColor = '#EF4444'; bgIcon = '#FEE2E2'; }
+            let badge = (t.status === 'Pago' || t.status === 'Efetivado') ? `<span class="badge-efetivado">Efetivado</span>` : `<span class="badge-pendente">Pendente</span>`;
+
+            return `<div class="drill-list-item">
+                <div class="drill-item-icon" style="background:${bgIcon}; color:${iconColor}"><i class="${iconClass}"></i></div>
+                <div class="drill-item-info"><div class="drill-item-desc">${t.desc}</div><div class="drill-item-sub"><span>${d}</span> &bull; <span>${t.cat}</span> &bull; ${badge}</div></div>
+                <div class="drill-item-val" style="color:${t.tipo === 'Receita' ? '#10B981' : '#EF4444'}">${t.tipo === 'Receita' ? '+' : '-'} ${fmt}</div>
+            </div>`;
+        }).join('');
+    }
+    modal.classList.add('active');
+}
+function fecharDetalhesDrill() { document.getElementById('modal-drilldown').classList.remove('active'); }
+
+// IA Insights
+function acaoInsightsIA() {
+    const modal = document.getElementById('modal-insights-ia');
+    const content = document.getElementById('ai-insights-content');
+    modal.classList.add('active');
+    content.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Conectando ao cérebro financeiro...';
+
+    const periodo = filtroRelatorio.mes === 'todos' ? `Ano ${filtroRelatorio.ano}` : `${filtroRelatorio.mes + 1}/${filtroRelatorio.ano}`;
+    const rec = document.getElementById('rep-total-receita').innerText;
+    const desp = document.getElementById('rep-total-despesa').innerText;
+    const saldo = document.getElementById('rep-saldo-anual').innerText;
+    let topCat = "Geral";
+    const listaCat = document.querySelectorAll('.cat-name');
+    if(listaCat.length > 0) topCat = listaCat[0].innerText;
+
+    const dadosParaIA = { periodo, receita: rec, despesa: desp, saldo, saldoNumerico: parseFloat(saldo.replace('R$','').replace(/\./g,'').replace(',','.')), topCategoria: topCat };
+
+    google.script.run
+        .withSuccessHandler((r) => { content.innerHTML = r.sucesso ? r.texto : '<span style="color:red">Erro: ' + r.erro + '</span>'; })
+        .withFailureHandler(() => { content.innerHTML = '<span style="color:red">Falha de conexão.</span>'; })
+        .gerarInsightsRelatorio(dadosParaIA);
+}
+
+// --- FUNÇÃO AUXILIAR PARA FECHAMENTO ---
+function fecharPrintPreview() {
+    document.getElementById('analytics-print-preview').classList.remove('active');
+    document.body.style.overflow = 'auto'; // Restaura o scroll do body
+}
+
+// --- FUNÇÃO PRINCIPAL DE PRINT (CHAMADA PELO BOTÃO) ---
+function gerarPDFRelatorio() {
+    const preview = document.getElementById('analytics-print-preview');
+    const content = document.getElementById('print-report-content');
+
+    // 1. Filtrar transações (Lógica igual)
+    const ano = filtroRelatorio.ano;
+    const mes = filtroRelatorio.mes;
+    let transacoes = DADOS_GLOBAIS.todasTransacoes.filter(t => {
+        let d = new Date(t.data);
+        const matchAno = d.getFullYear() === ano;
+        const matchMes = (mes === 'todos') ? true : d.getMonth() === mes;
+        return matchAno && matchMes;
+    });
+    transacoes.sort((a,b) => new Date(b.data) - new Date(a.data));
+
+    // 2. Montar o HTML do Relatório (Função auxiliar)
+    content.innerHTML = prepararDadosImpressao(transacoes);
+
+    // 3. Exibir Preview
+    preview.classList.add('active');
+    document.body.style.overflow = 'hidden'; // Esconde o scroll da página principal
+    
+    // NOTA: O botão "Imprimir / PDF" será clicado pelo usuário dentro do preview
+}
+
+// --- FUNÇÃO AUXILIAR QUE MONTA O HTML LIMPO DO RELATÓRIO (A4) ---
+function prepararDadosImpressao(transacoes) {
+    const ano = filtroRelatorio.ano;
+    const mes = filtroRelatorio.mes;
+    const logoSrc = document.getElementById('relatorio-app-logo').src;
+    const mesesNomes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+    // Determina o Título e Período de Destaque
+    const periodoDestaque = mes === 'todos' ? `Todo o Ano de ${ano}` : `${mesesNomes[mes]} de ${ano}`;
+    const tituloPrincipal = document.querySelector('.exec-brand .brand-title').textContent.trim();
+    const subTituloPrincipal = document.querySelector('.exec-brand .brand-subtitle').textContent.trim();
+    
+    // Captura KPIs
+    const saldo = document.getElementById('rep-saldo-anual').innerText;
+    const receita = document.getElementById('rep-total-receita').innerText;
+    const despesa = document.getElementById('rep-total-despesa').innerText;
+    
+    // Imagens de Gráficos
+    const imgCat = document.getElementById('chart-rel-cat').toDataURL("image/png", 1.0);
+    const listaCategoriasHTML = document.getElementById('lista-relatorio-categorias').innerHTML;
+    
+    // --- CORREÇÃO 2: Lógica Condicional para Gráfico vs Tabela ---
+    let htmlComparativo = '';
+    const imgComparativo = document.getElementById('chart-rel-barras').toDataURL("image/png", 1.0); 
+
+    if (mes === 'todos') {
+        // Se for TODOS (Ano todo): Mostra o gráfico de barras completo
+         htmlComparativo = `
+            <div style="border: 1px solid #ddd; padding: 20px; border-radius: 6px; page-break-inside: avoid; margin-bottom: 30px;">
+                <img src="${imgComparativo}" style="width:100%; height:auto; display:block;">
+            </div>`;
+    } else {
+        // Se for Mês Específico: Calcula e desenha a "Linha da Tabela"
+        // Como 'transacoes' já está filtrada para o mês atual, calculamos o total aqui
+        let r = 0, d = 0;
+        transacoes.forEach(t => {
+            let v = parseFloat(t.valor);
+            if(t.tipo === 'Receita') r += v;
+            else if(t.tipo.includes('Despesa')) d += v;
+        });
+        let balanco = r - d;
+        let corBalanco = balanco >= 0 ? '#10B981' : '#EF4444';
+        
+        // Calculo simples de porcentagem visual (max sendo o maior entre r ou d para a barra cheia)
+        let max = Math.max(r, d) || 1;
+        let pr = (r/max)*100;
+        let pd = (d/max)*100;
+        let nomeMes = mesesNomes[mes].toUpperCase();
+
+        htmlComparativo = `
+        <div style="border: 1px solid #ddd; padding: 20px; border-radius: 12px; margin-bottom: 30px; display:flex; align-items:center; gap:15px; page-break-inside: avoid;">
+            <div style="font-weight:800; color:#64748B; font-size:14px; width:60px;">${nomeMes}</div>
+            <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+                 <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:10px; font-weight:700; width:60px; color:#10B981;">Receitas</span>
+                    <div style="flex:1; height:8px; background:#F1F5F9; border-radius:4px; overflow:hidden;">
+                        <div style="height:100%; width:${pr}%; background:#10B981;"></div>
+                    </div>
+                 </div>
+                 <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:10px; font-weight:700; width:60px; color:#EF4444;">Despesas</span>
+                    <div style="flex:1; height:8px; background:#F1F5F9; border-radius:4px; overflow:hidden;">
+                        <div style="height:100%; width:${pd}%; background:#EF4444;"></div>
+                    </div>
+                 </div>
+            </div>
+            <div style="text-align:right; min-width:100px;">
+                <div style="color:#10B981; font-weight:600; font-size:12px;">${r.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+                <div style="color:#EF4444; font-weight:600; font-size:12px;">${d.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+                <div style="color:${corBalanco}; font-weight:800; font-size:13px; margin-top:4px;">${balanco.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+            </div>
+        </div>
+        `;
+    }
+
+    let html = `
+        <div style="padding: 40px; font-size: 11px; font-family: 'Plus Jakarta Sans', sans-serif;">
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid #1E293B; padding-bottom: 15px; margin-bottom: 30px;">
+                <div style="display:flex; align-items:center; gap: 15px;">
+                    <img src="${logoSrc}" style="height:45px;">
+                    <div style="color:#1E293B;">
+                        <h1 style="margin:0; font-size: 24px; font-weight:800;">${tituloPrincipal}</h1>
+                        <p style="margin:0; font-size:12px; color:#64748B;">${subTituloPrincipal}</p>
+                    </div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:16px; font-weight:800; color:#2563EB; border: 2px solid #2563EB; padding: 5px 15px; border-radius: 6px;">${periodoDestaque.toUpperCase()}</div>
+                    <div style="font-size:11px; color:#64748B; margin-top:5px;">Emissão: ${new Date().toLocaleDateString()}</div>
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-around; gap:15px; margin-bottom: 30px; border: 1px solid #eee; padding: 15px; border-radius: 8px; background: #f9f9f9; page-break-inside: avoid;">
+                <div style="text-align:center;">
+                    <span style="display:block; font-size:11px; color:#666; text-transform:uppercase;">Receita Total</span>
+                    <span style="font-size: 20px; font-weight:800; color:#10B981;">${receita}</span>
+                </div>
+                <div style="text-align:center;">
+                    <span style="display:block; font-size:11px; color:#666; text-transform:uppercase;">Despesa Total</span>
+                    <span style="font-size: 20px; font-weight:800; color:#B91C1C;">${despesa}</span>
+                </div>
+                <div style="text-align:center;">
+                    <span style="display:block; font-size:11px; color:#666; text-transform:uppercase;">Resultado Líquido</span>
+                    <span style="font-size: 20px; font-weight:800; color:#2563EB;">${saldo}</span>
+                </div>
+            </div>
+
+            <h3 style="font-size:16px; margin-bottom: 15px; padding-top:10px; border-top: 1px dashed #ccc;">Comparativo Mensal</h3>
+            ${htmlComparativo}
+
+            <h3 style="font-size:16px; margin-bottom: 15px; padding-top:10px; border-top: 1px dashed #ccc;">Distribuição Detalhada de Despesas</h3>
+            <div style="display:flex; gap: 20px; margin-bottom: 40px; page-break-inside: avoid;">
+                <div style="flex:1; border: 1px solid #ddd; padding: 15px; border-radius: 6px; text-align:center;">
+                    <div style="font-size:12px; font-weight:700; margin-bottom:10px;">Anel de Despesas</div>
+                    <img src="${imgCat}" style="max-height:220px; width:auto; margin:0 auto; display:block;">
+                </div>
+                <div style="flex:1; border: 1px solid #ddd; padding: 15px; border-radius: 6px;">
+                    <div style="font-size:12px; font-weight:700; margin-bottom:10px;">Lista de Categorias e %</div>
+                    <div style="font-size: 10px; line-height: 1.5;">
+                        ${listaCategoriasHTML.replace(/<div class="sub-list-wrapper".*?>(.*?)<\/div>/gs, '$1').replace(/onclick=".*?"/g, '')}
+                    </div>
+                </div>
+            </div>
+
+            <h3 style="font-size:16px; margin-top:20px; border-bottom:1px dashed #ccc; padding-bottom:5px;">Extrato de Movimentações (${transacoes.length} Itens)</h3>
+            <table style="width:100%; border-collapse: collapse; font-size: 11px;">
+                <thead>
+                    <tr style="background:#f1f5f9; color:#333;">
+                        <th style="text-align:left; padding:8px; border-bottom:2px solid #333;">DATA</th>
+                        <th style="text-align:left; padding:8px;">DESCRIÇÃO</th>
+                        <th style="text-align:left; padding:8px;">CATEGORIA</th>
+                        <th style="text-align:right; padding:8px;">VALOR</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${transacoes.map(t => {
+                        const val = parseFloat(t.valor).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+                        const dt = new Date(t.data).toLocaleDateString('pt-BR');
+                        // Vermelho Escuro (B91C1C) para Despesas
+                        const cor = t.tipo === 'Receita' ? '#10B981' : '#B91C1C';
+                        const sinal = t.tipo === 'Receita' ? '+' : '-';
+                        
+                        return `
+                            <tr style="border-bottom: 1px solid #eee; page-break-inside: avoid;">
+                                <td style="padding:8px; color:#666;">${dt}</td>
+                                <td style="padding:8px;">${t.desc}</td>
+                                <td style="padding:8px;">${t.cat}</td>
+                                <td style="padding:8px; text-align:right; color:${cor}; font-weight:700;">${sinal} ${val}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+            <div style="font-size:10px; color:#999; margin-top:40px; text-align:center; page-break-before: auto;">Documento gerado eletronicamente pelo sistema CashIn.</div>
+        </div>
+    `;
+    return html;
+}
+
+</script>
